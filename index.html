@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dice Wars: Hex Arena - Roguelike</title>
+    <meta name="description" content="Hexagonal strategy dice battle game with cards & classes - Player vs Computer">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <!-- Floating Header Buttons -->
+    <button class="floating-menu-btn" onclick="openGameMenuModal()" title="In-Game Menu">⚙️</button>
+    <button class="floating-help-btn" onclick="openHelpModal()" title="How to Play & Info">❓</button>
+
+    <!-- START SCREEN -->
+    <div id="start-screen">
+        <h1>⚔ DICE WARS ⚔</h1>
+        <p class="subtitle">Hexagonal Arena - Roguelike Edition</p>
+
+        <!-- Animated Carousel Selector Section -->
+        <div class="carousel-selector-container">
+            <div class="carousel-section-title">🛡️ Choose 3 Unique Classes For Your Dice</div>
+            <div class="dice-carousel-grid">
+                <!-- Die 1 Card -->
+                <div class="die-carousel-card">
+                    <div class="die-card-header">🟢 Die 1</div>
+                    <div class="class-carousel-controls">
+                        <button class="carousel-arrow-btn" onclick="cycleClass(0, -1)">◀</button>
+                        <span style="font-size:0.75rem;font-weight:800;color:var(--text-dim);">SELECT ROLE</span>
+                        <button class="carousel-arrow-btn" onclick="cycleClass(0, 1)">▶</button>
+                    </div>
+                    <div class="class-display-box" id="class-box-0"></div>
+                </div>
+
+                <!-- Die 2 Card -->
+                <div class="die-carousel-card">
+                    <div class="die-card-header">🟢 Die 2</div>
+                    <div class="class-carousel-controls">
+                        <button class="carousel-arrow-btn" onclick="cycleClass(1, -1)">◀</button>
+                        <span style="font-size:0.75rem;font-weight:800;color:var(--text-dim);">SELECT ROLE</span>
+                        <button class="carousel-arrow-btn" onclick="cycleClass(1, 1)">▶</button>
+                    </div>
+                    <div class="class-display-box" id="class-box-1"></div>
+                </div>
+
+                <!-- Die 3 Card -->
+                <div class="die-carousel-card">
+                    <div class="die-card-header">🟢 Die 3</div>
+                    <div class="class-carousel-controls">
+                        <button class="carousel-arrow-btn" onclick="cycleClass(2, -1)">◀</button>
+                        <span style="font-size:0.75rem;font-weight:800;color:var(--text-dim);">SELECT ROLE</span>
+                        <button class="carousel-arrow-btn" onclick="cycleClass(2, 1)">▶</button>
+                    </div>
+                    <div class="class-display-box" id="class-box-2"></div>
+                </div>
+            </div>
+        </div>
+
+        <button class="btn-start" onclick="startGame()">🎲 START BATTLE</button>
+    </div>
+
+    <!-- GAME SCREEN -->
+    <div id="game-screen">
+        <!-- CPU info -->
+        <div class="info-bar" id="cpu-bar">
+            <span class="team-label cpu">🔴 COMPUTER</span>
+            <div class="dice-hp-row" id="cpu-dice-hp"></div>
+            <span class="cpu-hand-count" id="cpu-hand-count">🃏 0</span>
+        </div>
+
+        <!-- Canvas -->
+        <div id="canvas-wrapper">
+            <canvas id="canvas"></canvas>
+        </div>
+
+        <!-- Row 1: Match Info Bar (Wave, Timer, Duration, Music, Fast Auto Testing) -->
+        <div class="status-row-bar" id="match-status-bar">
+            <div class="status-group">
+                <span class="wave-badge" id="wave-badge">Wave 1</span>
+                <div class="timer-badge" id="timer-badge">⏳ <span>30</span>s</div>
+                <div class="stopwatch-badge" id="stopwatch-badge">⏱️ 00:00</div>
+            </div>
+            <div class="status-group">
+                <button class="btn-auto-test" id="auto-test-btn" onclick="toggleFastAutoMode()" title="Fast Bot vs Bot testing mode">⚡ Fast Auto: OFF</button>
+                <button class="icon-btn" id="bgm-toggle" onclick="toggleBGM()">🔊 Music On</button>
+            </div>
+        </div>
+
+        <!-- Row 2: Player & Dice info -->
+        <div class="info-bar" id="player-bar">
+            <span class="team-label player">🟢 PLAYER</span>
+            <div class="dice-hp-row" id="player-dice-hp"></div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-bar" id="controls-bar">
+            <div class="roll-dice-display" id="roll-display"></div>
+            <div class="moves-display" id="moves-display">Moves: 0</div>
+            <button class="btn-action btn-deselect" id="btn-deselect" disabled onclick="deselectDie()">↩ Deselect</button>
+            <button class="btn-action btn-end" id="btn-end" disabled onclick="endTurn()">⏭ End Turn</button>
+        </div>
+
+        <!-- Card Hand -->
+        <div class="card-hand-panel" id="card-panel">
+            <div class="hand-label">🃏 Cards</div>
+            <button class="btn-cancel-card" id="btn-cancel-card" onclick="cancelCard()">❌ Cancel Card</button>
+            <div class="card-slots" id="card-slots"><span class="empty-hand">No cards yet</span></div>
+        </div>
+
+        <!-- Message -->
+        <div id="game-message">Waiting to start...</div>
+    </div>
+
+    <!-- OVERLAY -->
+    <div id="overlay" class="hidden"></div>
+
+    <!-- Modular Script Architecture -->
+    <script src="js/config.js"></script>
+    <script src="js/hex.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/render.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/cards.js"></script>
+    <script src="js/events.js"></script>
+    <script src="js/ai.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+</body>
+
+</html>
