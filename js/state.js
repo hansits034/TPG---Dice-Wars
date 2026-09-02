@@ -10,7 +10,7 @@ let animRotation = 0;
 let turnTimerInterval = null;
 let stopwatchInterval = null;
 
-function createDie(id, q, r, team, archetypeId='dracula') {
+function createDie(id, q, r, team, archetypeId='dracula', isSplit=false) {
     const arch = ARCHETYPES.find(a => a.id === archetypeId) || ARCHETYPES[0];
     const skills = JSON.parse(JSON.stringify(arch.skills));
 
@@ -30,10 +30,14 @@ function createDie(id, q, r, team, archetypeId='dracula') {
         icon: arch.icon,
         skills,
         bleedStacks: 0,
+        bleedMoveDistance: 0,
         antiHealTurns: 0,
         totalDamageTaken: 0,
         bonusDamageFromDamageTaken: 0,
         revived: false,
+        undeadTriggered: false,
+        isSplit: isSplit, // Split dice roll 1-3 instead of 1-6
+        damagedThisWave: false,
     };
 }
 
@@ -67,6 +71,7 @@ function resetGame() {
         burningTiles: new Map(),
         vineTraps: new Map(),
         bees: [],
+        zombies: [], // Necromancer zombies
         playerHand: [],
         cpuHand: [],
         activeCard: null,

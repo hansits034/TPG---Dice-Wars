@@ -67,8 +67,9 @@ function updateDiceHP() {
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken||0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken||0} dmg (+${rageBonus})</span>` : '';
+        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i+1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
-            <span style="color:var(--cpu)" class="die-class-badge">${d.icon} D${i+1}[${getDieEffectiveDamage(d)}]</span>
+            <span style="color:var(--cpu)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct*100}%;background:${color}"></div></div>
             <span>${Math.max(0,d.hp)}</span>
             ${rageBadge}
@@ -85,8 +86,9 @@ function updateDiceHP() {
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken||0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken||0} dmg (+${rageBonus})</span>` : '';
+        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i+1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
-            <span style="color:var(--player)" class="die-class-badge">${d.icon} D${i+1}[${getDieEffectiveDamage(d)}]</span>
+            <span style="color:var(--player)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct*100}%;background:${color}"></div></div>
             <span>${Math.max(0,d.hp)}</span>
             ${rageBadge}
@@ -137,6 +139,9 @@ function updateCardHand() {
     }
 
     if (!el) return;
+    const maxHand = getMaxHandSize('player');
+    const countLabel = `<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:4px;">Hand: ${game.playerHand.length}/${maxHand}</div>`;
+
     if (game.playerHand.length === 0) {
         el.innerHTML = '<span class="empty-hand">No cards yet</span>';
     } else {
@@ -150,7 +155,7 @@ function updateCardHand() {
         }).join('');
     }
     const cpuHandEl = document.getElementById('cpu-hand-count');
-    if (cpuHandEl) cpuHandEl.textContent = `🃏 ${game.cpuHand.length}`;
+    if (cpuHandEl) cpuHandEl.textContent = `🃏 ${game.cpuHand.length}/${getMaxHandSize('cpu')}`;
 }
 
 function showCardPopup(card, team) {
@@ -158,32 +163,39 @@ function showCardPopup(card, team) {
     popup.className = 'card-gained-popup';
     popup.innerHTML = `
         <div class="cg-title">✨ Card Gained!</div>
-        <div class="cg-name" style="color:var(--${card.rarity})">${card.icon} ${card.name}</div>
+        <div class="cg-icon">${card.icon}</div>
+        <div class="cg-name">${card.name}</div>
         <div class="cg-desc">${card.desc}</div>
-        <div class="cg-rarity" style="color:var(--${card.rarity})">${card.rarity}</div>
+        <div class="cg-rarity ${card.rarity}">${card.rarity.toUpperCase()}</div>
     `;
     document.body.appendChild(popup);
-    setTimeout(() => popup.remove(), 2400);
+    setTimeout(() => {
+        popup.style.animation = 'popupFadeOut 0.4s ease-in forwards';
+        setTimeout(() => popup.remove(), 400);
+    }, 1800);
 }
 
 function showBlitzAnnouncement(title, desc) {
-    SFX.blitz();
-    const popup = document.createElement('div');
-    popup.className = 'blitz-announcement';
-    popup.innerHTML = `
-        <h2>⚡ ARENA BLITZ! ⚡</h2>
-        <p style="color:#fbbf24;font-size:1.3rem;">${title}</p>
-        <p>${desc}</p>
+    const el = document.createElement('div');
+    el.className = 'blitz-announcement';
+    el.innerHTML = `
+        <div class="blitz-title">${title}</div>
+        <div class="blitz-desc">${desc}</div>
     `;
-    document.body.appendChild(popup);
-    setTimeout(() => popup.remove(), 3000);
+    document.body.appendChild(el);
+    SFX.blitz();
+    setTimeout(() => {
+        el.style.animation = 'blitzFadeOut 0.4s ease-in forwards';
+        setTimeout(() => el.remove(), 400);
+    }, 2200);
 }
 
 function showOverlay(html) {
     const ol = document.getElementById('overlay');
-    if (!ol) return;
-    ol.innerHTML = html;
-    ol.classList.remove('hidden');
+    if (ol) {
+        ol.innerHTML = html;
+        ol.classList.remove('hidden');
+    }
 }
 
 function hideOverlay() {
@@ -228,14 +240,14 @@ function openHelpModal() {
                 <li><strong>HP:</strong> Each die has <strong>50 Base HP</strong>.</li>
                 <li><strong>Damage:</strong> Equal to initial die face value.</li>
                 <li><strong>Unique Roles:</strong> Each of your 3 dice has a distinct role.</li>
-                <li><strong>Classes:</strong> 🩸 Dracula, 😇 Angel, 🥷 Ninja, 🗡️ Samurai, 🔮 Telekinator, 🛡️ Metal, 😡 Rage.</li>
+                <li><strong>Classes:</strong> 🩸 Dracula, 😇 Angel, 🥷 Ninja, 🗡️ Samurai, 🔮 Telekinator, 🛡️ Defender, 😡 Rage, 💀 Necromancer, 🧙 Mage.</li>
             </ul>
 
             <h3>⚡ Roguelike Upgrades (Every 4 Waves)</h3>
             <p>Choose 1 of 3 random skill level-ups to empower your dice!</p>
 
             <h3>✨ Event Tiles (Every 3 Waves)</h3>
-            <p>Sparkling tiles spawn on empty hexes. Step on them to pick up a card (Max 3 in hand).</p>
+            <p>Sparkling tiles spawn on empty hexes. Step on them to pick up a card (Max 3 in hand, or 4 with Defender/Samurai).</p>
 
             <h3>⚡ Arena Blitz Events (Every 5 Waves - 16.6% Each)</h3>
             <ul>

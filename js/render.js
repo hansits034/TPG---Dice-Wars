@@ -298,6 +298,16 @@ function render() {
         }
     }
 
+    if (game.zombies) {
+        for (const zombie of game.zombies) {
+            const p = hexToPixel(zombie.q, zombie.r);
+            const sx = p.x + gridCenterX, sy = p.y + gridCenterY;
+            const floatY = Math.sin(now / 200 + zombie.id) * 3;
+            ctx.font = `${HEX_SIZE * 0.65}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('🧟', sx, sy + floatY);
+        }
+    }
+
     for (const die of allDice()) {
         if (die.hp <= 0) continue;
         if (animatingDie && animatingDie.id === die.id) continue;

@@ -6,7 +6,7 @@ let HEX_SIZE = 30;
 let gridCenterX = 0, gridCenterY = 0;
 const SQRT3 = Math.sqrt(3);
 const MAX_HP = 50;
-const MAX_HAND = 3;
+const BASE_MAX_HAND = 3;
 const EVENT_TILE_INTERVAL = 3; // every 3 waves
 const BLITZ_INTERVAL = 5;      // every 5 waves
 const UPGRADE_INTERVAL = 4;    // every 4 waves
@@ -19,7 +19,7 @@ const ARCHETYPES = [
         id: 'dracula', name: 'Dracula', icon: '🩸',
         skills: [
             { id: 'healOnAtk', name: 'Lifesteal', desc: 'Heal +2 HP per attack (+3 at Lvl 2, +5 at Lvl 3)', maxLvl: 3, curLvl: 1 },
-            { id: 'bleed', name: 'Bleed', desc: 'Attacked enemies take +1 damage for 3 waves (Max 3 stacks) & CANNOT be healed for 1 turn', maxLvl: 3, curLvl: 0 }
+            { id: 'bleed', name: 'Bleed', desc: 'Attacks add 1 stack (2 at Lvl 2, 3 at Lvl 3, Max 3). Enemy takes 1 damage per 3 tiles moved for 3 waves & CANNOT be healed for 1 turn', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
@@ -39,7 +39,7 @@ const ARCHETYPES = [
     {
         id: 'samurai', name: 'Samurai', icon: '🗡️',
         skills: [
-            { id: 'concealMastery', name: 'Conceal Mastery', desc: 'Conceal effects on this die last +1 extra wave', maxLvl: 2, curLvl: 1 },
+            { id: 'dashMastery', name: 'Dash Mastery', desc: '+1 Card Slot (Max 4). Free Dash card every 10 waves & +15% Dash drop chance on event tiles', maxLvl: 1, curLvl: 1 },
             { id: 'superDash', name: 'Super Dash', desc: 'Increases Dash card damage by +5', maxLvl: 4, curLvl: 0 }
         ]
     },
@@ -51,10 +51,10 @@ const ARCHETYPES = [
         ]
     },
     {
-        id: 'metal', name: 'Metal', icon: '🛡️',
+        id: 'defender', name: 'Defender', icon: '🛡️',
         skills: [
-            { id: 'thorns', name: 'Thorns', desc: 'Reflect 1 damage (2 at Lvl 2, 3 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 1 },
-            { id: 'toughness', name: 'Toughness', desc: 'Reduce incoming damage by -1 (-2 at Lvl 2)', maxLvl: 2, curLvl: 0 }
+            { id: 'defenderMastery', name: 'Defender Mastery', desc: '+1 Card Slot (Max 4). Free Conceal card every 10 waves & +15% Conceal drop chance on event tiles', maxLvl: 1, curLvl: 1 },
+            { id: 'thorns', name: 'Thorns', desc: 'Reflect 1 damage (2 at Lvl 2, 3 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
@@ -62,6 +62,20 @@ const ARCHETYPES = [
         skills: [
             { id: 'backStronger', name: 'Back Stronger', desc: 'Gain +1 permanent damage for every 10 dmg taken (9 dmg at Lvl 2, 7 dmg at Lvl 3)', maxLvl: 3, curLvl: 1 },
             { id: 'explode', name: 'Explode', desc: 'When destroyed, deal 8 damage (15 at Lvl 2) to ALL enemy dice', maxLvl: 2, curLvl: 0 }
+        ]
+    },
+    {
+        id: 'necromancer', name: 'Necromancer', icon: '💀',
+        skills: [
+            { id: 'minions', name: 'Minions', desc: 'Every 2 waves, summon 1 (2 at Lvl 2, 3 at Lvl 3) zombie lasting 2-3 waves. Zombies move 3 tiles/turn & deal 2 damage', maxLvl: 3, curLvl: 1 },
+            { id: 'undead', name: 'Undead', desc: 'On death: splits into 2 playable dice (rolls 1-3) with 5 HP (10 at Lvl 2, 20 at Lvl 3) & empowers zombies with +2 (+3/+4) damage', maxLvl: 3, curLvl: 0 }
+        ]
+    },
+    {
+        id: 'mage', name: 'Mage', icon: '🧙',
+        skills: [
+            { id: 'poke', name: 'Poke', desc: 'At turn start, randomly zaps 1 enemy die for die roll value + 0 dmg (+2 at Lvl 2, +4 at Lvl 3, +6 at Lvl 4)', maxLvl: 4, curLvl: 1 },
+            { id: 'focus', name: 'Focus', desc: 'If unhurt in previous wave: Poke has 35% chance (60% at Lvl 2) to deal x2 CRIT damage', maxLvl: 2, curLvl: 0 }
         ]
     }
 ];
@@ -122,17 +136,37 @@ const CARD_DEFS = [
     { id:'dmg2',    icon:'⚔️', name:'Damage ×2',     desc:'Next attack deals double damage',                   rarity:'common',   weight:20, target:'none' },
     { id:'dmg3',    icon:'🔥', name:'Damage ×3',     desc:'Next attack deals triple damage',                   rarity:'rare',     weight:5,  target:'none' },
     { id:'freeze',  icon:'❄️', name:'Freeze',        desc:'Freeze 1 enemy die for 2 turns',                    rarity:'uncommon', weight:12, target:'enemy-die' },
-    { id:'block',   icon:'🧱', name:'Block',         desc:'Place 2 walls on empty hexes (2 rounds)',           rarity:'uncommon', weight:12, target:'hex' },
+    { id:'block',   icon:'🧱', name:'Block',         desc:'Place 4 walls on empty hexes (2 rounds)',           rarity:'uncommon', weight:12, target:'hex-4' },
     { id:'swap',    icon:'🔀', name:'Swap',          desc:'Swap positions of 2 own dice',                      rarity:'uncommon', weight:12, target:'own-die-2' },
     { id:'atkAgain',icon:'⚔️', name:'Attack Again',  desc:'Can attack again this turn (different target)',     rarity:'rare',     weight:6,  target:'none' },
     { id:'conceal', icon:'👻', name:'Conceal',       desc:'Hide 1 die for 2 rounds (untargetable)',            rarity:'uncommon', weight:10, target:'own-die' },
     { id:'clone',   icon:'🪞', name:'Clone',         desc:'+2 moves & half damage for selected die (1 round)', rarity:'rare',     weight:5,  target:'own-die' },
     { id:'dash',    icon:'💨', name:'Dash',          desc:'Dash straight across arena, enemies in path take 4 dmg', rarity:'rare', weight:6,  target:'own-die-dir' },
 ];
-const TOTAL_WEIGHT = CARD_DEFS.reduce((s,c) => s + c.weight, 0);
 
-function randomCard() {
-    let r = Math.random() * TOTAL_WEIGHT;
-    for (const c of CARD_DEFS) { r -= c.weight; if (r <= 0) return { ...c }; }
+function getMaxHandSize(team) {
+    const dice = aliveDice(team);
+    const hasBonus = dice.some(d => getSkillLevel(d, 'defenderMastery') > 0 || getSkillLevel(d, 'dashMastery') > 0);
+    return hasBonus ? 4 : BASE_MAX_HAND;
+}
+
+function randomCard(team = 'player') {
+    const dice = aliveDice(team);
+    const hasDefender = dice.some(d => getSkillLevel(d, 'defenderMastery') > 0);
+    const hasSamurai = dice.some(d => getSkillLevel(d, 'dashMastery') > 0);
+
+    const adjustedDefs = CARD_DEFS.map(c => {
+        let w = c.weight;
+        if (c.id === 'conceal' && hasDefender) w = Math.round(w * 2.2); // +15% total share approx
+        if (c.id === 'dash' && hasSamurai) w = Math.round(w * 2.5);    // +15% total share approx
+        return { ...c, weight: w };
+    });
+
+    const totalWeight = adjustedDefs.reduce((s, c) => s + c.weight, 0);
+    let r = Math.random() * totalWeight;
+    for (const c of adjustedDefs) {
+        r -= c.weight;
+        if (r <= 0) return { ...c };
+    }
     return { ...CARD_DEFS[0] };
 }

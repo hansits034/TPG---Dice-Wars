@@ -1,5 +1,5 @@
 // ==========================================================
-// 12. ARENA BLITZ, EVENT TILES & ROGUELIKE UPGRADES
+// 12. ARENA BLITZ, EVENT TILES, ROGUELIKE UPGRADES & MINIONS
 // ==========================================================
 async function triggerRoguelikeUpgrade() {
     stopTurnTimer();
@@ -109,13 +109,14 @@ function checkEventTilePickup(die) {
 
     game.eventTiles.delete(key);
     const hand = die.team === 'player' ? game.playerHand : game.cpuHand;
+    const maxH = getMaxHandSize(die.team);
 
-    if (hand.length >= MAX_HAND) {
+    if (hand.length >= maxH) {
         addFloatingText('Hand Full!', die.q, die.r, '#fbbf24', 14);
         return;
     }
 
-    const card = randomCard();
+    const card = randomCard(die.team);
     hand.push(card);
     SFX.cardGet();
 
@@ -145,6 +146,7 @@ async function triggerArenaBlitz() {
                     d.r = available[i].r;
                     const p = hexToPixel(d.q, d.r);
                     spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#818cf8', 20, 4, 800, 4);
+                    triggerTileEffectOnDie(d);
                 }
             });
             break;
@@ -166,6 +168,10 @@ async function triggerArenaBlitz() {
             const count = Math.floor(Math.random() * 3) + 3;
             for (let i = 0; i < Math.min(count, available.length); i++) {
                 game.burningTiles.set(hKey(available[i].q, available[i].r), { wavesLeft: 3 });
+            }
+            // If any dice currently stand on newly spawned burning tiles, trigger damage immediately
+            for (const d of allDice()) {
+                if (d.hp > 0) triggerTileEffectOnDie(d);
             }
             break;
         }
@@ -193,15 +199,86 @@ async function triggerArenaBlitz() {
         case 'magician': {
             showBlitzAnnouncement('🧙 MAGICIAN BLITZ!', 'The Magician grants 2 random cards to everyone!');
             await delay(1500);
+            const maxP = getMaxHandSize('player');
+            const maxC = getMaxHandSize('cpu');
             for (let i = 0; i < 2; i++) {
-                if (game.playerHand.length < MAX_HAND) game.playerHand.push(randomCard());
-                if (game.cpuHand.length < MAX_HAND) game.cpuHand.push(randomCard());
+                if (game.playerHand.length < maxP) game.playerHand.push(randomCard('player'));
+                if (game.cpuHand.length < maxC) game.cpuHand.push(randomCard('cpu'));
             }
             updateCardHand();
             break;
         }
     }
     await delay(1000);
+}
+
+// Instantaneous tile effect trigger helper
+function triggerTileEffectOnDie(die) {
+    if (!die || die.hp <= 0) return;
+    const k = hKey(die.q, die.r);
+
+    if (game.burningTiles && game.burningTiles.has(k)) {
+        die.hp -= 3;
+        die.totalDamageTaken = (die.totalDamageTaken || 0) + 3;
+        die.damagedThisWave = true;
+        if (die.hp < 0) die.hp = 0;
+
+        const backLvl = getSkillLevel(die, 'backStronger');
+        if (backLvl > 0 || die.archetype === 'Rage') {
+            const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
+            const newBonus = Math.floor(die.totalDamageTaken / reqDmg);
+            if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
+                const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
+                die.bonusDamageFromDamageTaken = newBonus;
+                addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
+            }
+        }
+
+        addFloatingText('-3 🔥', die.q, die.r, '#ef4444', 18);
+        updateDiceHP();
+        if (checkWin()) return;
+    }
+
+    if (game.vineTraps && game.vineTraps.has(k)) {
+        die.trapped = 2;
+        die.moveAllowance = 0;
+        addFloatingText('🌿 Trapped!', die.q, die.r, '#84cc16', 20);
+        SFX.block();
+        updateDiceHP();
+    }
+
+    // Check bee collision on this tile
+    if (game.bees) {
+        for (const bee of game.bees) {
+            if (bee.q === die.q && bee.r === die.r && die.concealed === 0) {
+                die.hp -= 5;
+                die.totalDamageTaken = (die.totalDamageTaken || 0) + 5;
+                die.damagedThisWave = true;
+                die.moveDebuff = Math.max(die.moveDebuff, 1);
+                if (die.hp < 0) die.hp = 0;
+                addFloatingText('-5 🐝', die.q, die.r, '#fbbf24', 20);
+                SFX.attack();
+                updateDiceHP();
+                if (checkWin()) return;
+            }
+        }
+    }
+
+    // Check zombie collision on this tile
+    if (game.zombies) {
+        for (const zombie of game.zombies) {
+            if (zombie.q === die.q && zombie.r === die.r && zombie.team !== die.team && die.concealed === 0) {
+                die.hp -= zombie.damage;
+                die.totalDamageTaken = (die.totalDamageTaken || 0) + zombie.damage;
+                die.damagedThisWave = true;
+                if (die.hp < 0) die.hp = 0;
+                addFloatingText(`-${zombie.damage} 🧟`, die.q, die.r, '#10b981', 20);
+                SFX.attack();
+                updateDiceHP();
+                if (checkWin()) return;
+            }
+        }
+    }
 }
 
 async function processBeesMovement() {
@@ -229,6 +306,7 @@ async function processBeesMovement() {
             if (bee.q === closestDie.q && bee.r === closestDie.r) {
                 closestDie.hp -= 5;
                 closestDie.totalDamageTaken = (closestDie.totalDamageTaken || 0) + 5;
+                closestDie.damagedThisWave = true;
                 closestDie.moveDebuff = Math.max(closestDie.moveDebuff, 1);
                 if (closestDie.hp < 0) closestDie.hp = 0;
 
@@ -244,6 +322,56 @@ async function processBeesMovement() {
                 }
 
                 addFloatingText('-5 🐝', bee.q, bee.r, '#fbbf24', 20);
+                SFX.attack();
+                updateDiceHP();
+                if (checkWin()) return;
+                break;
+            }
+        }
+    }
+}
+
+async function processZombiesMovement() {
+    if (!game.zombies || game.zombies.length === 0) return;
+
+    for (const zombie of game.zombies) {
+        const enemyTeam = zombie.team === 'player' ? 'cpu' : 'player';
+        const targetDice = aliveDice(enemyTeam).filter(d => d.concealed === 0);
+        if (targetDice.length === 0) continue;
+
+        // Choose target die (persists or picks nearest)
+        let targetDie = targetDice[Math.floor(Math.random() * targetDice.length)];
+
+        // Move 3 tiles per turn towards enemy die
+        const steps = 3;
+        for (let s = 0; s < steps; s++) {
+            if (zombie.q === targetDie.q && zombie.r === targetDie.r) break;
+
+            const neighbors = getNeighbors(zombie.q, zombie.r).filter(n => !isBlocked(n.q, n.r));
+            neighbors.sort((a, b) => hexDist(a.q, a.r, targetDie.q, targetDie.r) - hexDist(b.q, b.r, targetDie.q, targetDie.r));
+            if (neighbors.length > 0) {
+                zombie.q = neighbors[0].q;
+                zombie.r = neighbors[0].r;
+            }
+
+            if (zombie.q === targetDie.q && zombie.r === targetDie.r) {
+                targetDie.hp -= zombie.damage;
+                targetDie.totalDamageTaken = (targetDie.totalDamageTaken || 0) + zombie.damage;
+                targetDie.damagedThisWave = true;
+                if (targetDie.hp < 0) targetDie.hp = 0;
+
+                const backLvl = getSkillLevel(targetDie, 'backStronger');
+                if (backLvl > 0 || targetDie.archetype === 'Rage') {
+                    const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
+                    const newBonus = Math.floor(targetDie.totalDamageTaken / reqDmg);
+                    if (newBonus > (targetDie.bonusDamageFromDamageTaken || 0)) {
+                        const diff = newBonus - (targetDie.bonusDamageFromDamageTaken || 0);
+                        targetDie.bonusDamageFromDamageTaken = newBonus;
+                        addFloatingText(`😡 Rage +${diff} DMG!`, targetDie.q, targetDie.r, '#ef4444', 18);
+                    }
+                }
+
+                addFloatingText(`-${zombie.damage} 🧟`, zombie.q, zombie.r, '#10b981', 20);
                 SFX.attack();
                 updateDiceHP();
                 if (checkWin()) return;

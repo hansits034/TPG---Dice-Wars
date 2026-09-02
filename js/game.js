@@ -42,39 +42,26 @@ async function animateMove(die, path) {
         });
         SFX.move();
 
-        const k = hKey(path[i].q, path[i].r);
+        // Check Bleed Move Distance (1 dmg per 3 tiles moved)
+        if (die.bleedStacks > 0) {
+            die.bleedMoveDistance = (die.bleedMoveDistance || 0) + 1;
+            if (die.bleedMoveDistance % 3 === 0) {
+                die.hp -= 1;
+                die.totalDamageTaken = (die.totalDamageTaken || 0) + 1;
+                die.damagedThisWave = true;
+                if (die.hp < 0) die.hp = 0;
+                addFloatingText('-1 🩸 Bleed', die.q, die.r, '#ef4444', 16);
+                updateDiceHP();
+                if (checkWin()) return;
+            }
+        }
 
         checkEventTilePickup(die);
 
-        if (game.vineTraps && game.vineTraps.has(k)) {
-            die.trapped = 2;
-            die.moveAllowance = 0;
-            addFloatingText('🌿 Trapped!', path[i].q, path[i].r, '#84cc16', 20);
-            SFX.block();
-            updateDiceHP();
-            break;
-        }
-
-        if (game.burningTiles && game.burningTiles.has(k)) {
-            die.hp -= 3;
-            die.totalDamageTaken = (die.totalDamageTaken || 0) + 3;
-            if (die.hp < 0) die.hp = 0;
-
-            const backLvl = getSkillLevel(die, 'backStronger');
-            if (backLvl > 0 || die.archetype === 'Rage') {
-                const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
-                const newBonus = Math.floor(die.totalDamageTaken / reqDmg);
-                if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
-                    const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
-                    die.bonusDamageFromDamageTaken = newBonus;
-                    addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
-                }
-            }
-
-            addFloatingText('-3 🔥', path[i].q, path[i].r, '#ef4444', 18);
-            updateDiceHP();
-            if (checkWin()) return;
-        }
+        // Immediate tile hazard trigger (Burning, Vine, Bees, Zombies)
+        triggerTileEffectOnDie(die);
+        if (checkWin()) return;
+        if (die.trapped > 0) break;
     }
     animatingDie = null;
 
@@ -84,23 +71,31 @@ async function animateMove(die, path) {
         die.q = bounce.q; die.r = bounce.r;
         addFloatingText('🌀 Bounced!', die.q, die.r, '#a78bfa', 16);
         SFX.move();
+        triggerTileEffectOnDie(die);
     }
 }
 
-function rollDice(n) {
+function rollDiceForUnit(die) {
+    const maxVal = die.isSplit ? 3 : 6;
+    return Math.floor(Math.random() * maxVal) + 1;
+}
+
+function rollDice(n, isSplit=false) {
     const vals = [];
-    for (let i = 0; i < n; i++) vals.push(Math.floor(Math.random() * 6) + 1);
+    const maxVal = isSplit ? 3 : 6;
+    for (let i = 0; i < n; i++) vals.push(Math.floor(Math.random() * maxVal) + 1);
     return vals;
 }
 
-async function animateRoll(team, n=3) {
+async function animateRoll(team, aliveUnits) {
     const el = document.getElementById('roll-display');
     const cls = team === 'player' ? 'player-die' : 'cpu-die';
+    const n = aliveUnits.length;
     let finalVals;
     SFX.roll();
 
     for (let f = 0; f < 12; f++) {
-        const vals = rollDice(n);
+        const vals = aliveUnits.map(d => rollDiceForUnit(d));
         const total = vals.reduce((a, b) => a + b, 0);
         if (el) {
             el.innerHTML = `🎲 ` + vals.map(v => `<span class="roll-die-box ${cls}">${v}</span>`).join('+') +
@@ -110,7 +105,7 @@ async function animateRoll(team, n=3) {
         if (f === 11) finalVals = vals;
     }
 
-    finalVals = rollDice(n);
+    finalVals = aliveUnits.map(d => rollDiceForUnit(d));
     const total = finalVals.reduce((a, b) => a + b, 0);
     if (el) {
         el.innerHTML = `🎲 ` + finalVals.map(v => `<span class="roll-die-box ${cls}">${v}</span>`).join('+') +
@@ -258,11 +253,70 @@ async function tickWaveEffects() {
         if (d.halfDamage > 0) d.halfDamage--;
         if (d.moveDebuff > 0) d.moveDebuff--;
         if (d.frozen > 0) {
-            d.bleedStacks = 0; // Bleed effect vanishes when frozen!
+            d.bleedStacks = 0; // Bleed vanishes when frozen
         } else if (d.bleedStacks > 0) {
             d.bleedStacks--;
         }
         d.cloneActive = false;
+        // Reset damagedThisWave flag at start of wave
+        d.damagedThisWave = false;
+    }
+
+    // Passive grant card every 10 waves (Samurai -> Dash, Defender -> Conceal)
+    if (game.wave % 10 === 0) {
+        const pDice = aliveDice('player');
+        const hasSamurai = pDice.some(d => getSkillLevel(d, 'dashMastery') > 0);
+        const hasDefender = pDice.some(d => getSkillLevel(d, 'defenderMastery') > 0);
+        const maxH = getMaxHandSize('player');
+
+        if (hasSamurai && game.playerHand.length < maxH) {
+            const dashCard = CARD_DEFS.find(c => c.id === 'dash');
+            if (dashCard) {
+                game.playerHand.push({ ...dashCard });
+                addFloatingText('🗡️ Free Dash!', pDice[0].q, pDice[0].r, '#c084fc', 16);
+            }
+        }
+        if (hasDefender && game.playerHand.length < maxH) {
+            const concealCard = CARD_DEFS.find(c => c.id === 'conceal');
+            if (concealCard) {
+                game.playerHand.push({ ...concealCard });
+                addFloatingText('🛡️ Free Conceal!', pDice[0].q, pDice[0].r, '#a78bfa', 16);
+            }
+        }
+        updateCardHand();
+    }
+
+    // Necromancer minions summoning (Every 2 waves)
+    if (game.wave % 2 === 0) {
+        for (const d of allDice()) {
+            if (d.hp <= 0) continue;
+            const minionLvl = getSkillLevel(d, 'minions');
+            if (minionLvl > 0 && d.frozen === 0) {
+                const count = minionLvl; // 1/2/3
+                let undeadBoost = 0;
+                // Check if undead empowered
+                const undeadLvl = getSkillLevel(d, 'undead');
+                if (d.isSplit && undeadLvl > 0) {
+                    undeadBoost = undeadLvl === 1 ? 2 : undeadLvl === 2 ? 3 : 4;
+                }
+                const baseZombieDmg = 2 + undeadBoost;
+
+                for (let i = 0; i < count; i++) {
+                    const emptyHex = findNearestEmptyHex(d.q, d.r);
+                    const wavesLeft = Math.floor(Math.random() * 2) + 2; // 2 to 3 waves
+                    game.zombies.push({
+                        id: Math.random(),
+                        q: emptyHex.q,
+                        r: emptyHex.r,
+                        team: d.team,
+                        damage: baseZombieDmg,
+                        wavesLeft: wavesLeft
+                    });
+                    spawnParticles(hexToPixel(emptyHex.q, emptyHex.r).x + gridCenterX, hexToPixel(emptyHex.q, emptyHex.r).y + gridCenterY, '#10b981', 12, 2, 600);
+                }
+                addFloatingText(`🧟 +${count} Zombie!`, d.q, d.r, '#10b981', 18);
+            }
+        }
     }
 
     if (game.wave % 3 === 0) {
@@ -272,7 +326,7 @@ async function tickWaveEffects() {
                 const chance = hypnoLvl === 1 ? 0.4 : 0.7;
                 if (Math.random() < chance) {
                     if (game.cpuHand.length > 0) game.cpuHand.pop();
-                    if (game.playerHand.length < MAX_HAND) game.playerHand.push(randomCard());
+                    if (game.playerHand.length < getMaxHandSize('player')) game.playerHand.push(randomCard('player'));
                     addFloatingText('🔮 Hypno Steal!', d.q, d.r, '#c084fc', 18);
                     updateCardHand();
                 }
@@ -305,7 +359,15 @@ async function tickWaveEffects() {
         return b.wavesLeft > 0;
     });
 
+    if (game.zombies) {
+        game.zombies = game.zombies.filter(z => {
+            z.wavesLeft--;
+            return z.wavesLeft > 0;
+        });
+    }
+
     await processBeesMovement();
+    await processZombiesMovement();
 
     if ((game.wave - 1) % EVENT_TILE_INTERVAL === 0 && game.wave > 1) {
         spawnEventTiles();
@@ -340,6 +402,64 @@ async function handleTurnEndSequence(finishedTeam) {
     }
 }
 
+async function executeMagePoke(team, aliveUnits) {
+    const enemyTeam = team === 'player' ? 'cpu' : 'player';
+    const enemies = aliveDice(enemyTeam).filter(d => !d.concealed);
+    if (enemies.length === 0) return;
+
+    for (const die of aliveUnits) {
+        const pokeLvl = getSkillLevel(die, 'poke');
+        if (pokeLvl > 0 && die.frozen === 0) {
+            const bonusDmg = pokeLvl === 1 ? 0 : pokeLvl === 2 ? 2 : pokeLvl === 3 ? 4 : 6;
+            const rollVal = die.turnRoll || 1;
+            let totalPokeDmg = rollVal + bonusDmg;
+
+            // Check Focus skill (if not damaged this/previous wave)
+            let isCrit = false;
+            const focusLvl = getSkillLevel(die, 'focus');
+            if (focusLvl > 0 && !die.damagedThisWave) {
+                const critChance = focusLvl === 1 ? 0.35 : 0.60;
+                if (Math.random() < critChance) {
+                    isCrit = true;
+                    totalPokeDmg *= 2;
+                }
+            }
+
+            const targetEnemy = enemies[Math.floor(Math.random() * enemies.length)];
+            targetEnemy.hp -= totalPokeDmg;
+            targetEnemy.totalDamageTaken = (targetEnemy.totalDamageTaken || 0) + totalPokeDmg;
+            targetEnemy.damagedThisWave = true;
+            if (targetEnemy.hp < 0) targetEnemy.hp = 0;
+
+            SFX.attack();
+            const p = hexToPixel(targetEnemy.q, targetEnemy.r);
+            spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#a855f7', 15, 3, 600);
+
+            if (isCrit) {
+                addFloatingText(`💥 CRIT POKE -${totalPokeDmg}!`, targetEnemy.q, targetEnemy.r, '#fbbf24', 22);
+            } else {
+                addFloatingText(`⚡ POKE -${totalPokeDmg}!`, targetEnemy.q, targetEnemy.r, '#c084fc', 18);
+            }
+
+            // Check Rage Back Stronger
+            const enemyBackLvl = getSkillLevel(targetEnemy, 'backStronger');
+            if (enemyBackLvl > 0 || targetEnemy.archetype === 'Rage') {
+                const reqDmg = enemyBackLvl === 2 ? 9 : enemyBackLvl === 3 ? 7 : 10;
+                const newBonus = Math.floor(targetEnemy.totalDamageTaken / reqDmg);
+                if (newBonus > (targetEnemy.bonusDamageFromDamageTaken || 0)) {
+                    const diff = newBonus - (targetEnemy.bonusDamageFromDamageTaken || 0);
+                    targetEnemy.bonusDamageFromDamageTaken = newBonus;
+                    addFloatingText(`😡 Rage +${diff} DMG!`, targetEnemy.q, targetEnemy.r, '#ef4444', 18);
+                }
+            }
+
+            updateDiceHP();
+            await delay(400);
+            if (checkWin()) return;
+        }
+    }
+}
+
 async function beginPlayerTurn() {
     game.phase = 'PLAYER_ROLL';
     game.currentTurn = 'player';
@@ -359,7 +479,7 @@ async function beginPlayerTurn() {
     const n = alive.length;
     if (n === 0) { checkWin(); return; }
 
-    const vals = await animateRoll('player', n);
+    const vals = await animateRoll('player', alive);
 
     alive.forEach((d, i) => {
         d.turnRoll = vals[i];
@@ -375,6 +495,10 @@ async function beginPlayerTurn() {
     updateMoves();
     updateRollDisplay(vals, 'player');
     updateDiceHP();
+
+    // Mage Poke Execution
+    await executeMagePoke('player', alive);
+    if (checkWin()) return;
 
     // Check Telekinator Psychic Push skill
     for (const d of alive) {
@@ -411,15 +535,15 @@ async function beginPlayerTurn() {
 
 function selectDie(die) {
     if (die.frozen > 0) {
-        setMessage(`Die D${game.playerDice.indexOf(die)+1} is frozen! ❄️ (${die.frozen} turn${die.frozen>1?'s':''} left)`);
+        setMessage(`Die D${die.id} is frozen! ❄️ (${die.frozen} turn${die.frozen>1?'s':''} left)`);
         return;
     }
     if (die.trapped > 0) {
-        setMessage(`Die D${game.playerDice.indexOf(die)+1} is trapped in vines! 🌿 (${die.trapped} wave${die.trapped>1?'s':''} left)`);
+        setMessage(`Die D${die.id} is trapped in vines! 🌿 (${die.trapped} wave${die.trapped>1?'s':''} left)`);
         return;
     }
     if (die.moveAllowance <= 0) {
-        setMessage(`Die D${game.playerDice.indexOf(die)+1} has no moves left.`);
+        setMessage(`Die D${die.id} has no moves left.`);
         return;
     }
 
@@ -429,7 +553,7 @@ function selectDie(die) {
     game.parents = parents;
 
     if (reachable.size === 0) {
-        setMessage(`Die D${game.playerDice.indexOf(die)+1} has no valid moves. Try another.`);
+        setMessage(`Die D${die.id} has no valid moves. Try another.`);
         game.selectedDie = null;
         game.reachable = null;
         game.parents = null;
@@ -439,7 +563,7 @@ function selectDie(die) {
 
     const attacks = [...reachable.values()].filter(v => v.isAttack);
     const effDmg = getDieEffectiveDamage(die);
-    setMessage(`D${game.playerDice.indexOf(die)+1} [DMG:${effDmg}${die.damageMultiplier>1?'×'+die.damageMultiplier:''}] selected. ${die.moveAllowance} moves. ${attacks.length ? attacks.length + ' target(s).' : ''}`);
+    setMessage(`D${die.id} [DMG:${effDmg}${die.damageMultiplier>1?'×'+die.damageMultiplier:''}] selected. ${die.moveAllowance} moves. ${attacks.length ? attacks.length + ' target(s).' : ''}`);
     setButtons(true, true);
 }
 
@@ -453,6 +577,37 @@ function deselectDie() {
     game.parents = null;
     setMessage(`Select a green die to move.`);
     setButtons(true, false);
+}
+
+// Handle Necromancer Undead split upon death
+function handleUndeadSplit(deadDie) {
+    const undeadLvl = getSkillLevel(deadDie, 'undead');
+    if (undeadLvl > 0 && !deadDie.undeadTriggered) {
+        deadDie.undeadTriggered = true;
+        const splitHp = undeadLvl === 1 ? 5 : undeadLvl === 2 ? 10 : 20;
+
+        // Create 2 split dice
+        const teamDiceArray = deadDie.team === 'player' ? game.playerDice : game.cpuDice;
+        const empty1 = findNearestEmptyHex(deadDie.q, deadDie.r);
+        const empty2 = findNearestEmptyHex(empty1.q, empty1.r);
+
+        const subDie1 = createDie(`${deadDie.id}_a`, empty1.q, empty1.r, deadDie.team, 'necromancer', true);
+        const subDie2 = createDie(`${deadDie.id}_b`, empty2.q, empty2.r, deadDie.team, 'necromancer', true);
+
+        subDie1.hp = splitHp;
+        subDie2.hp = splitHp;
+        subDie1.skills = JSON.parse(JSON.stringify(deadDie.skills));
+        subDie2.skills = JSON.parse(JSON.stringify(deadDie.skills));
+        subDie1.undeadTriggered = true;
+        subDie2.undeadTriggered = true;
+
+        teamDiceArray.push(subDie1, subDie2);
+
+        addFloatingText(`💀 UNDEAD SPLIT! (${splitHp} HP each)`, deadDie.q, deadDie.r, '#10b981', 20);
+        SFX.powerUp();
+        return true;
+    }
+    return false;
 }
 
 async function handlePlayerMove(tq, tr) {
@@ -477,16 +632,13 @@ async function handlePlayerMove(tq, tr) {
 
         await animateMove(die, [{ q: die.q, r: die.r }, { q: tq, r: tr }]);
 
-        // Calculate damage with Toughness reduction
-        const toughLvl = getSkillLevel(enemyDie, 'toughness');
-        const toughRed = toughLvl > 0 ? (toughLvl === 1 ? 1 : 2) : 0;
-
         const attackerEffDmg = getDieEffectiveDamage(die);
-        let rawDamage = Math.max(1, attackerEffDmg * die.damageMultiplier + enemyDie.bleedStacks - toughRed);
+        let rawDamage = Math.max(1, attackerEffDmg * die.damageMultiplier);
         const damage = enemyDie.halfDamage > 0 ? Math.ceil(rawDamage / 2) : rawDamage;
 
         enemyDie.hp -= damage;
         enemyDie.totalDamageTaken += damage;
+        enemyDie.damagedThisWave = true;
         SFX.attack();
 
         // Check Rage Back Stronger on enemy
@@ -501,12 +653,13 @@ async function handlePlayerMove(tq, tr) {
             }
         }
 
-        // Check Metal Thorns reflect on attacker (die)
+        // Check Defender Thorns reflect on attacker (die)
         const thornsLvl = getSkillLevel(enemyDie, 'thorns');
         if (thornsLvl > 0) {
             const reflectDmg = thornsLvl === 1 ? 1 : thornsLvl === 2 ? 2 : 3;
             die.hp -= reflectDmg;
             die.totalDamageTaken = (die.totalDamageTaken || 0) + reflectDmg;
+            die.damagedThisWave = true;
             if (die.hp < 0) die.hp = 0;
 
             const dieBackLvl = getSkillLevel(die, 'backStronger');
@@ -533,12 +686,13 @@ async function handlePlayerMove(tq, tr) {
             addFloatingText(`🚫 Anti-Healed!`, die.q, die.r, '#ef4444', 14);
         }
 
-        // Dracula Bleed + Anti-Heal
+        // Dracula Bleed: adds stacks based on level (1/2/3, Max 3)
         const bleedLvl = getSkillLevel(die, 'bleed');
         if (bleedLvl > 0) {
-            enemyDie.bleedStacks = Math.min(3, enemyDie.bleedStacks + bleedLvl);
+            const stacksToAdd = bleedLvl === 1 ? 1 : bleedLvl === 2 ? 2 : 3;
+            enemyDie.bleedStacks = Math.min(3, (enemyDie.bleedStacks || 0) + stacksToAdd);
             enemyDie.antiHealTurns = 1;
-            addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks} (No Heal 1T)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
+            addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks}!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
         }
 
         addFloatingText(`-${damage}`, tq, tr, '#ff4466', 22);
@@ -553,7 +707,7 @@ async function handlePlayerMove(tq, tr) {
             SFX.destroy();
             die.q = tq; die.r = tr;
 
-            // Rage Explode on death (can trigger again after revive)
+            // Rage Explode on death
             const explodeLvl = getSkillLevel(enemyDie, 'explode');
             if (explodeLvl > 0) {
                 const expDmg = explodeLvl === 1 ? 8 : 15;
@@ -562,23 +716,29 @@ async function handlePlayerMove(tq, tr) {
                 aliveDice('player').forEach(pd => {
                     pd.hp -= expDmg;
                     pd.totalDamageTaken = (pd.totalDamageTaken || 0) + expDmg;
+                    pd.damagedThisWave = true;
                     if (pd.hp < 0) pd.hp = 0;
                     addFloatingText(`-${expDmg} 💥`, pd.q, pd.r, '#ef4444', 20);
                 });
             }
 
-            // Revive check (Rage can revive and explode again on next death)
-            for (const teamDie of game.cpuDice) {
-                const revLvl = getSkillLevel(teamDie, 'revive');
-                if (revLvl > 0 && !enemyDie.revived) {
-                    enemyDie.hp = revLvl * 15;
-                    enemyDie.revived = true;
-                    const emptyHex = findNearestEmptyHex(enemyDie.q, enemyDie.r);
-                    enemyDie.q = emptyHex.q;
-                    enemyDie.r = emptyHex.r;
-                    addFloatingText(`😇 REVIVED (${enemyDie.hp} HP)!`, enemyDie.q, enemyDie.r, '#fbbf24', 20);
-                    SFX.heal();
-                    break;
+            // Necromancer Undead split check (without consuming Angel revive!)
+            const didSplit = handleUndeadSplit(enemyDie);
+
+            // Revive check (Angel revive) if didn't split
+            if (!didSplit) {
+                for (const teamDie of game.cpuDice) {
+                    const revLvl = getSkillLevel(teamDie, 'revive');
+                    if (revLvl > 0 && !enemyDie.revived) {
+                        enemyDie.hp = revLvl * 15;
+                        enemyDie.revived = true;
+                        const emptyHex = findNearestEmptyHex(enemyDie.q, enemyDie.r);
+                        enemyDie.q = emptyHex.q;
+                        enemyDie.r = emptyHex.r;
+                        addFloatingText(`😇 REVIVED (${enemyDie.hp} HP)!`, enemyDie.q, enemyDie.r, '#fbbf24', 20);
+                        SFX.heal();
+                        break;
+                    }
                 }
             }
         } else {
@@ -689,6 +849,9 @@ async function handlePsychicTileSelect(q, r) {
         spawnParticles(oldP.x + gridCenterX, oldP.y + gridCenterY, '#c084fc', 18, 3, 600);
         spawnParticles(newP.x + gridCenterX, newP.y + gridCenterY, '#c084fc', 18, 3, 600);
         addFloatingText('🔮 Pushed!', q, r, '#c084fc', 20);
+
+        // Immediate tile hazard check when pushed
+        triggerTileEffectOnDie(enemy);
 
         game.psychicSource = null;
         game.psychicTargetEnemy = null;

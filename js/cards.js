@@ -31,9 +31,9 @@ function onCardClick(idx) {
         } else if (card.target === 'own-die-2') {
             game.phase = 'PLAYER_CARD_TARGET';
             setMessage(`🔀 Swap: Click 2 of your dice to swap positions (or click cancel to abort).`);
-        } else if (card.target === 'hex') {
+        } else if (card.target === 'hex' || card.target === 'hex-4') {
             game.phase = 'PLAYER_CARD_TARGET';
-            setMessage(`🧱 Block: Click 2 empty hexes to place walls (or click cancel to abort).`);
+            setMessage(`🧱 Block: Click 4 empty hexes to place walls (or click cancel to abort).`);
         } else if (card.target === 'own-die') {
             game.phase = 'PLAYER_CARD_TARGET';
             setMessage(`${card.icon} ${card.name}: Click one of your dice (or click cancel to abort).`);
@@ -115,9 +115,8 @@ function applyCardWithTarget(card, team, handIdx, targets) {
         }
         case 'conceal': {
             const die = targets[0];
-            const masteryLvl = getSkillLevel(die, 'concealMastery');
-            die.concealed = 2 + masteryLvl;
-            addFloatingText(`👻 Concealed (${die.concealed} waves)!`, die.q, die.r, '#a78bfa', 16);
+            die.concealed = 2;
+            addFloatingText(`👻 Concealed (2 waves)!`, die.q, die.r, '#a78bfa', 16);
             SFX.conceal();
             const p = hexToPixel(die.q, die.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#a78bfa', 15, 1.5, 1000, 3);
@@ -145,6 +144,10 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const p2 = hexToPixel(d2.q, d2.r);
             spawnParticles(p1.x+gridCenterX, p1.y+gridCenterY, '#60a5fa', 12, 2, 600);
             spawnParticles(p2.x+gridCenterX, p2.y+gridCenterY, '#60a5fa', 12, 2, 600);
+            
+            // Check tile effects upon swapping
+            triggerTileEffectOnDie(d1);
+            triggerTileEffectOnDie(d2);
             break;
         }
         case 'block': {
@@ -248,12 +251,17 @@ async function executeDash(die, dir, team, handIdx) {
     for (const enemy of hitEnemies) {
         const dmg = enemy.halfDamage > 0 ? Math.ceil(baseDashDmg / 2) : baseDashDmg;
         enemy.hp -= dmg;
+        enemy.totalDamageTaken = (enemy.totalDamageTaken || 0) + dmg;
+        enemy.damagedThisWave = true;
         if (enemy.hp < 0) enemy.hp = 0;
         addFloatingText(`-${dmg} 💨`, enemy.q, enemy.r, '#fbbf24', 20);
         const p = hexToPixel(enemy.q, enemy.r);
         spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#fbbf24', 15, 3, 600, 3);
         SFX.attack();
     }
+
+    // Trigger tile effects on landing
+    triggerTileEffectOnDie(die);
 
     updateDiceHP();
     updateCardHand();
@@ -297,15 +305,18 @@ function handleCardTarget(q, r) {
             }
         }
         return true;
-    } else if (card.target === 'hex') {
+    } else if (card.target === 'hex' || card.target === 'hex-4') {
+        const reqCount = card.target === 'hex-4' ? 4 : 2;
         if (isValidHex(q, r) && !getDieAt(q, r) && !isBlocked(q, r) && !game.eventTiles.has(hKey(q, r))) {
-            game.cardTargets.push({ q, r });
-            addFloatingText('✓', q, r, '#a8a29e', 14);
-            if (game.cardTargets.length >= 2) {
-                applyCardWithTarget(card, 'player', card._handIdx, game.cardTargets);
-                return true;
-            } else {
-                setMessage('🧱 Block: Click second hex...');
+            if (!game.cardTargets.some(t => t.q === q && t.r === r)) {
+                game.cardTargets.push({ q, r });
+                addFloatingText('✓', q, r, '#a8a29e', 14);
+                if (game.cardTargets.length >= reqCount) {
+                    applyCardWithTarget(card, 'player', card._handIdx, game.cardTargets);
+                    return true;
+                } else {
+                    setMessage(`🧱 Block: Click hex #${game.cardTargets.length + 1} (${game.cardTargets.length}/${reqCount})...`);
+                }
             }
         }
         return true;
