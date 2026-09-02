@@ -140,7 +140,6 @@ function updateCardHand() {
 
     if (!el) return;
     const maxHand = getMaxHandSize('player');
-    const countLabel = `<div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:4px;">Hand: ${game.playerHand.length}/${maxHand}</div>`;
 
     if (game.playerHand.length === 0) {
         el.innerHTML = '<span class="empty-hand">No cards yet</span>';
@@ -228,6 +227,51 @@ function quitToMainMenu() {
     stopStopwatch();
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('start-screen').classList.remove('hidden');
+}
+
+function openDiceGuideModal() {
+    const roleGuidesHTML = ARCHETYPES.map(arch => {
+        const skillsHTML = arch.skills.map((s, idx) => {
+            const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'toughness';
+            const tagText = isPassive ? 'PASIF' : `SKILL ${idx + 1}`;
+            const tagClass = isPassive ? 'guide-skill-tag passive-tag' : 'guide-skill-tag';
+            const itemClass = isPassive ? 'guide-skill-item passive' : 'guide-skill-item';
+            return `
+                <div class="${itemClass}">
+                    <div class="guide-skill-name">
+                        <span>⚡ ${s.name} <span style="font-size:0.75rem;color:var(--text-dim);font-weight:600;">(Max Lvl ${s.maxLvl})</span></span>
+                        <span class="${tagClass}">${tagText}</span>
+                    </div>
+                    <div class="guide-skill-desc">${s.desc}</div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="guide-role-card">
+                <div class="guide-role-header">
+                    <span class="guide-role-icon">${arch.icon}</span>
+                    <span class="guide-role-title">${arch.name}</span>
+                </div>
+                <div class="guide-role-skills">
+                    ${skillsHTML}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    showOverlay(`
+        <div class="overlay-box dice-guide-container">
+            <h2>📖 COMPLETE DICE & SKILLS GUIDE</h2>
+            <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:14px;">
+                Pelajari seluruh role dadu, kemampuan pasif, skill aktif, dan detail upgrade roguelike di bawah ini:
+            </p>
+            <div class="dice-guide-list">
+                ${roleGuidesHTML}
+            </div>
+            <button class="overlay-btn" onclick="hideOverlay();">Close Guide</button>
+        </div>
+    `);
 }
 
 function openHelpModal() {
