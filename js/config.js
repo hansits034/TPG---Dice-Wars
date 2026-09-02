@@ -56,7 +56,7 @@ const ARCHETYPES = [
         skills: [
             { id: 'defenderMastery', name: 'Defender Mastery', desc: '+1 Card Slot (Max 4). Free Conceal card every 10 waves & +15% Conceal drop chance on event tiles', maxLvl: 1, curLvl: 1 },
             { id: 'thorns', name: 'Thorns', desc: 'When attacked, reflect 1 damage (3 at Lvl 2, 5 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 1 },
-            { id: 'toughness', name: 'Toughness', desc: 'Reduce all incoming damage by -1 (-2 at Lvl 2)', maxLvl: 2, curLvl: 0 }
+            { id: 'toughness', name: 'Toughness', desc: 'Reduce all incoming damage by -1 (-3 at Lvl 2, -5 at Lvl 3)', maxLvl: 3, curLvl: 0 }
         ]
     },
     {

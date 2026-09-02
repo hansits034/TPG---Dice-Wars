@@ -296,9 +296,9 @@ async function beginCpuTurn() {
 
             await animateMove(die, [{ q: die.q, r: die.r }, { q: targetHex.q, r: targetHex.r }]);
 
-            // Calculate damage with Toughness reduction
+            // Calculate damage with Toughness reduction: -1 / -3 / -5
             const toughLvl = getSkillLevel(enemyDie, 'toughness');
-            const toughRed = toughLvl > 0 ? (toughLvl === 1 ? 1 : 2) : 0;
+            const toughRed = toughLvl === 1 ? 1 : toughLvl === 2 ? 3 : toughLvl === 3 ? 5 : 0;
 
             const attackerEffDmg = getDieEffectiveDamage(die);
             let rawDamage = Math.max(1, (attackerEffDmg * die.damageMultiplier) - toughRed);
