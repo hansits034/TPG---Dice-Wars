@@ -236,11 +236,11 @@ function renderCodexRoleDetails(archId) {
     selectedCodexRoleId = archId;
     const arch = ARCHETYPES.find(a => a.id === archId) || ARCHETYPES[0];
 
-    // Update tab active classes
-    const allTabs = document.querySelectorAll('.codex-tab-item');
-    allTabs.forEach(tab => {
-        if (tab.dataset.archId === archId) tab.classList.add('active');
-        else tab.classList.remove('active');
+    // Update card active classes
+    const allCards = document.querySelectorAll('.royale-card');
+    allCards.forEach(card => {
+        if (card.dataset.archId === archId) card.classList.add('active');
+        else card.classList.remove('active');
     });
 
     const detailsContainer = document.getElementById('codex-role-details-area');
@@ -284,12 +284,13 @@ function renderCodexRoleDetails(archId) {
 function openDiceGuideModal() {
     selectedCodexRoleId = selectedPlayerClasses[0] || 'dracula';
 
-    const tabsHTML = ARCHETYPES.map(arch => {
+    const cardsHTML = ARCHETYPES.map((arch, idx) => {
         const isActive = arch.id === selectedCodexRoleId ? ' active' : '';
         return `
-            <div class="codex-tab-item${isActive}" data-arch-id="${arch.id}" onclick="renderCodexRoleDetails('${arch.id}')">
-                <span class="codex-tab-icon">${arch.icon}</span>
-                <span class="codex-tab-name">${arch.name}</span>
+            <div class="royale-card${isActive}" data-arch-id="${arch.id}" onclick="renderCodexRoleDetails('${arch.id}')">
+                <div class="royale-card-elixir"><span>${idx + 1}</span></div>
+                <div class="royale-card-art">${arch.icon}</div>
+                <div class="royale-card-ribbon">${arch.name}</div>
             </div>
         `;
     }).join('');
@@ -298,18 +299,18 @@ function openDiceGuideModal() {
         <div class="overlay-box dice-codex-container">
             <h2>📖 DICE & SKILLS CODEX</h2>
             <div class="codex-header-desc">
-                Pilih kartu role di bawah ini untuk membuka detail kemampuan, pasif, dan peningkatan roguelike:
+                Pilih kartu role di bawah ini untuk melihat detail kemampuan dan upgrade roguelike:
             </div>
             
-            <div class="codex-role-tabs-grid">
-                ${tabsHTML}
+            <div class="codex-card-deck-grid">
+                ${cardsHTML}
             </div>
 
             <div class="codex-details-card" id="codex-role-details-area">
                 <!-- Injected via renderCodexRoleDetails -->
             </div>
 
-            <div style="text-align:center;margin-top:10px;">
+            <div style="text-align:center;margin-top:14px;">
                 <button class="overlay-btn" onclick="hideOverlay();">Tutup Codex</button>
             </div>
         </div>
