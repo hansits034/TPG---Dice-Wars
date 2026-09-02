@@ -13,7 +13,7 @@ const UPGRADE_INTERVAL = 4;    // every 4 waves
 const EVENT_TILES_PER_SPAWN = 3;
 const TURN_TIME_LIMIT = 30;
 
-// Archetype definitions
+// Archetype definitions (Each class has passive/skills with max levels & descriptions)
 const ARCHETYPES = [
     {
         id: 'dracula', name: 'Dracula', icon: '🩸',
@@ -40,7 +40,8 @@ const ARCHETYPES = [
         id: 'samurai', name: 'Samurai', icon: '🗡️',
         skills: [
             { id: 'dashMastery', name: 'Dash Mastery', desc: '+1 Card Slot (Max 4). Free Dash card every 10 waves & +15% Dash drop chance on event tiles', maxLvl: 1, curLvl: 1 },
-            { id: 'superDash', name: 'Super Dash', desc: 'Increases Dash card damage by +5', maxLvl: 4, curLvl: 0 }
+            { id: 'concealMastery', name: 'Conceal Master', desc: 'Conceal effect on this die lasts +1 extra wave (+2 extra waves at Lvl 2)', maxLvl: 2, curLvl: 1 },
+            { id: 'superDash', name: 'Super Dash', desc: 'Increases Dash card damage by +5 per level', maxLvl: 4, curLvl: 0 }
         ]
     },
     {
@@ -54,7 +55,8 @@ const ARCHETYPES = [
         id: 'defender', name: 'Defender', icon: '🛡️',
         skills: [
             { id: 'defenderMastery', name: 'Defender Mastery', desc: '+1 Card Slot (Max 4). Free Conceal card every 10 waves & +15% Conceal drop chance on event tiles', maxLvl: 1, curLvl: 1 },
-            { id: 'thorns', name: 'Thorns', desc: 'Reflect 1 damage (2 at Lvl 2, 3 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 0 }
+            { id: 'thorns', name: 'Thorns', desc: 'When attacked, reflect 1 damage (3 at Lvl 2, 5 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 1 },
+            { id: 'toughness', name: 'Toughness', desc: 'Reduce all incoming damage by -1 (-2 at Lvl 2)', maxLvl: 2, curLvl: 0 }
         ]
     },
     {
@@ -93,10 +95,13 @@ function renderCarouselBox(dieIdx) {
     box.offsetHeight; // trigger reflow
     box.style.animation = 'classSlideIn 0.3s ease-out';
 
+    // Show first active skill/passive as highlighted description
+    const displaySkill = arch.skills.find(s => !s.id.endsWith('Mastery')) || arch.skills[0];
+
     box.innerHTML = `
         <div class="class-display-icon">${arch.icon}</div>
         <div class="class-display-name">${arch.name}</div>
-        <div class="class-display-desc">${arch.skills[0].desc}</div>
+        <div class="class-display-desc">${displaySkill.desc}</div>
     `;
 }
 

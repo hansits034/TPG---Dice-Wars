@@ -246,9 +246,14 @@ function renderCodexRoleDetails(archId) {
     const detailsContainer = document.getElementById('codex-role-details-area');
     if (!detailsContainer) return;
 
-    const skillsHTML = arch.skills.map((s, idx) => {
-        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'toughness';
-        const tagText = isPassive ? 'PASIF' : `SKILL ${idx + 1}`;
+    let activeSkillCount = 0;
+    const skillsHTML = arch.skills.map((s) => {
+        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger';
+        let tagText = 'PASIF';
+        if (!isPassive) {
+            activeSkillCount++;
+            tagText = `SKILL ${activeSkillCount}`;
+        }
         const badgeClass = isPassive ? 'codex-skill-badge passive-badge' : 'codex-skill-badge';
         const boxClass = isPassive ? 'codex-skill-box passive' : 'codex-skill-box';
         return `

@@ -632,8 +632,12 @@ async function handlePlayerMove(tq, tr) {
 
         await animateMove(die, [{ q: die.q, r: die.r }, { q: tq, r: tr }]);
 
+        // Calculate damage with Toughness reduction
+        const toughLvl = getSkillLevel(enemyDie, 'toughness');
+        const toughRed = toughLvl > 0 ? (toughLvl === 1 ? 1 : 2) : 0;
+
         const attackerEffDmg = getDieEffectiveDamage(die);
-        let rawDamage = Math.max(1, attackerEffDmg * die.damageMultiplier);
+        let rawDamage = Math.max(1, (attackerEffDmg * die.damageMultiplier) - toughRed);
         const damage = enemyDie.halfDamage > 0 ? Math.ceil(rawDamage / 2) : rawDamage;
 
         enemyDie.hp -= damage;
@@ -653,10 +657,10 @@ async function handlePlayerMove(tq, tr) {
             }
         }
 
-        // Check Defender Thorns reflect on attacker (die)
+        // Check Defender Thorns reflect on attacker (die): 1 / 3 / 5
         const thornsLvl = getSkillLevel(enemyDie, 'thorns');
         if (thornsLvl > 0) {
-            const reflectDmg = thornsLvl === 1 ? 1 : thornsLvl === 2 ? 2 : 3;
+            const reflectDmg = thornsLvl === 1 ? 1 : thornsLvl === 2 ? 3 : 5;
             die.hp -= reflectDmg;
             die.totalDamageTaken = (die.totalDamageTaken || 0) + reflectDmg;
             die.damagedThisWave = true;

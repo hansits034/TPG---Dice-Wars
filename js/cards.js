@@ -115,8 +115,10 @@ function applyCardWithTarget(card, team, handIdx, targets) {
         }
         case 'conceal': {
             const die = targets[0];
-            die.concealed = 2;
-            addFloatingText(`👻 Concealed (2 waves)!`, die.q, die.r, '#a78bfa', 16);
+            const concealBonus = getSkillLevel(die, 'concealMastery');
+            const duration = 2 + concealBonus;
+            die.concealed = duration;
+            addFloatingText(`👻 Concealed (${duration} waves)!`, die.q, die.r, '#a78bfa', 16);
             SFX.conceal();
             const p = hexToPixel(die.q, die.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#a78bfa', 15, 1.5, 1000, 3);
