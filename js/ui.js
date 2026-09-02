@@ -66,12 +66,12 @@ function updateDiceHP() {
         const trappedCls = d.trapped > 0 ? ' trapped' : '';
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
-        const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken||0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken||0} dmg (+${rageBonus})</span>` : '';
-        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i+1}[${getDieEffectiveDamage(d)}]`;
+        const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
+        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--cpu)" class="die-class-badge">${dieLabel}</span>
-            <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct*100}%;background:${color}"></div></div>
-            <span>${Math.max(0,d.hp)}</span>
+            <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
+            <span>${Math.max(0, d.hp)}</span>
             ${rageBadge}
             ${d.moveAllowance > 0 && game.currentTurn === 'cpu' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
         </div>`;
@@ -85,12 +85,12 @@ function updateDiceHP() {
         const trappedCls = d.trapped > 0 ? ' trapped' : '';
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
-        const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken||0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken||0} dmg (+${rageBonus})</span>` : '';
-        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i+1}[${getDieEffectiveDamage(d)}]`;
+        const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
+        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--player)" class="die-class-badge">${dieLabel}</span>
-            <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct*100}%;background:${color}"></div></div>
-            <span>${Math.max(0,d.hp)}</span>
+            <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
+            <span>${Math.max(0, d.hp)}</span>
             ${rageBadge}
             ${d.moveAllowance > 0 && game.currentTurn === 'player' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
         </div>`;
@@ -304,7 +304,7 @@ function openDiceGuideModal() {
         <div class="overlay-box dice-codex-container">
             <h2>📖 DICE & SKILLS CODEX</h2>
             <div class="codex-header-desc">
-                Pilih kartu role di bawah ini untuk melihat detail kemampuan dan upgrade roguelike:
+                Select a role below to view detailed abilities and roguelike upgrades:
             </div>
             
             <div class="codex-card-deck-grid">
