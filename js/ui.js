@@ -229,49 +229,93 @@ function quitToMainMenu() {
     document.getElementById('start-screen').classList.remove('hidden');
 }
 
-function openDiceGuideModal() {
-    const roleGuidesHTML = ARCHETYPES.map(arch => {
-        const skillsHTML = arch.skills.map((s, idx) => {
-            const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'toughness';
-            const tagText = isPassive ? 'PASIF' : `SKILL ${idx + 1}`;
-            const tagClass = isPassive ? 'guide-skill-tag passive-tag' : 'guide-skill-tag';
-            const itemClass = isPassive ? 'guide-skill-item passive' : 'guide-skill-item';
-            return `
-                <div class="${itemClass}">
-                    <div class="guide-skill-name">
-                        <span>⚡ ${s.name} <span style="font-size:0.75rem;color:var(--text-dim);font-weight:600;">(Max Lvl ${s.maxLvl})</span></span>
-                        <span class="${tagClass}">${tagText}</span>
-                    </div>
-                    <div class="guide-skill-desc">${s.desc}</div>
-                </div>
-            `;
-        }).join('');
+// Current active role in the Dice Codex card collection view
+let selectedCodexRoleId = 'dracula';
 
+function renderCodexRoleDetails(archId) {
+    selectedCodexRoleId = archId;
+    const arch = ARCHETYPES.find(a => a.id === archId) || ARCHETYPES[0];
+
+    // Update tab active classes
+    const allTabs = document.querySelectorAll('.codex-tab-item');
+    allTabs.forEach(tab => {
+        if (tab.dataset.archId === archId) tab.classList.add('active');
+        else tab.classList.remove('active');
+    });
+
+    const detailsContainer = document.getElementById('codex-role-details-area');
+    if (!detailsContainer) return;
+
+    const skillsHTML = arch.skills.map((s, idx) => {
+        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'toughness';
+        const tagText = isPassive ? 'PASIF' : `SKILL ${idx + 1}`;
+        const badgeClass = isPassive ? 'codex-skill-badge passive-badge' : 'codex-skill-badge';
+        const boxClass = isPassive ? 'codex-skill-box passive' : 'codex-skill-box';
         return `
-            <div class="guide-role-card">
-                <div class="guide-role-header">
-                    <span class="guide-role-icon">${arch.icon}</span>
-                    <span class="guide-role-title">${arch.name}</span>
+            <div class="${boxClass}">
+                <div class="codex-skill-head">
+                    <span class="codex-skill-title">⚡ ${s.name} <span class="codex-skill-max">(Max Lvl ${s.maxLvl})</span></span>
+                    <span class="${badgeClass}">${tagText}</span>
                 </div>
-                <div class="guide-role-skills">
-                    ${skillsHTML}
+                <div class="codex-skill-desc">${s.desc}</div>
+            </div>
+        `;
+    }).join('');
+
+    detailsContainer.innerHTML = `
+        <div class="codex-role-title-row">
+            <div class="codex-role-title-left">
+                <div class="codex-hero-icon">${arch.icon}</div>
+                <div>
+                    <div class="codex-hero-name">${arch.name}</div>
+                    <div style="font-size:0.75rem;color:var(--text-dim);margin-top:2px;">Role Identity & Archetype</div>
                 </div>
+            </div>
+            <span class="codex-role-tag">9 Playable Roles</span>
+        </div>
+        <div class="codex-skills-list">
+            ${skillsHTML}
+        </div>
+    `;
+
+    if (typeof SFX !== 'undefined' && SFX.move) SFX.move();
+}
+
+function openDiceGuideModal() {
+    selectedCodexRoleId = selectedPlayerClasses[0] || 'dracula';
+
+    const tabsHTML = ARCHETYPES.map(arch => {
+        const isActive = arch.id === selectedCodexRoleId ? ' active' : '';
+        return `
+            <div class="codex-tab-item${isActive}" data-arch-id="${arch.id}" onclick="renderCodexRoleDetails('${arch.id}')">
+                <span class="codex-tab-icon">${arch.icon}</span>
+                <span class="codex-tab-name">${arch.name}</span>
             </div>
         `;
     }).join('');
 
     showOverlay(`
-        <div class="overlay-box dice-guide-container">
-            <h2>📖 COMPLETE DICE & SKILLS GUIDE</h2>
-            <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:14px;">
-                Pelajari seluruh role dadu, kemampuan pasif, skill aktif, dan detail upgrade roguelike di bawah ini:
-            </p>
-            <div class="dice-guide-list">
-                ${roleGuidesHTML}
+        <div class="overlay-box dice-codex-container">
+            <h2>📖 DICE & SKILLS CODEX</h2>
+            <div class="codex-header-desc">
+                Pilih kartu role di bawah ini untuk membuka detail kemampuan, pasif, dan peningkatan roguelike:
             </div>
-            <button class="overlay-btn" onclick="hideOverlay();">Close Guide</button>
+            
+            <div class="codex-role-tabs-grid">
+                ${tabsHTML}
+            </div>
+
+            <div class="codex-details-card" id="codex-role-details-area">
+                <!-- Injected via renderCodexRoleDetails -->
+            </div>
+
+            <div style="text-align:center;margin-top:10px;">
+                <button class="overlay-btn" onclick="hideOverlay();">Tutup Codex</button>
+            </div>
         </div>
     `);
+
+    renderCodexRoleDetails(selectedCodexRoleId);
 }
 
 function openHelpModal() {
