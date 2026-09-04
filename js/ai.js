@@ -211,7 +211,7 @@ async function beginCpuTurn() {
 
     alive.forEach((d, i) => {
         d.turnRoll = vals[i];
-        d.baseDamage = vals[i]; // Damage dasar mengikuti mata dadu hasil kocokan turn ini!
+        d.baseDamage = vals[i]; // Base damage equals rolled die value for this turn!
         const flashLvl = getSkillLevel(d, 'flash');
         const flashBonus = flashLvl === 1 ? 1 : flashLvl === 2 ? 2 : flashLvl === 3 ? 4 : 0;
         d.moveAllowance = Math.max(0, vals[i] + flashBonus - d.moveDebuff);

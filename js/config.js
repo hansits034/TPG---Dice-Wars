@@ -77,7 +77,15 @@ const ARCHETYPES = [
         id: 'mage', name: 'Mage', icon: '🧙',
         skills: [
             { id: 'zap', name: 'Zap', desc: 'Gain +1 Zap stack every 2 waves (Max 2). Deals damage equal to hex distance to nearest enemy (+1 dmg per Lvl). Click Zap button to fire!', maxLvl: 3, curLvl: 1 },
-            { id: 'focus', name: 'Focus', desc: 'If unhurt in previous wave: Zap has 35% chance (60% at Lvl 2) to deal x2 CRIT damage', maxLvl: 2, curLvl: 0 }
+            { id: 'focus', name: 'Focus', desc: 'If unhurt in previous wave: Zap has 35% chance (65% at Lvl 2, 99% at Lvl 3) to deal x2 CRIT damage', maxLvl: 3, curLvl: 0 }
+        ]
+    },
+    {
+        id: 'doctor', name: 'Doctor', icon: '🩺',
+        skills: [
+            { id: 'doctorMastery', name: 'Medical Mastery', desc: '+1 Card Slot (Max 4). Heal Pill card restores +5 additional HP (Total +12 HP)', maxLvl: 1, curLvl: 1 },
+            { id: 'nobleSaviour', name: 'Noble Saviour', desc: 'Gain 1 free Heal Pill card every 4 waves (every 3 waves at Lvl 2)', maxLvl: 2, curLvl: 1 },
+            { id: 'mutantResearch', name: 'Mutant Research', desc: 'Permanently adds +1 (+2 at Lvl 2, +3 at Lvl 3, +4 at Lvl 4) to all rolled dice values for the whole team', maxLvl: 4, curLvl: 0 }
         ]
     }
 ];
@@ -157,7 +165,7 @@ const CARD_DEFS = [
 
 function getMaxHandSize(team) {
     const dice = aliveDice(team);
-    const hasBonus = dice.some(d => getSkillLevel(d, 'defenderMastery') > 0 || getSkillLevel(d, 'dashMastery') > 0);
+    const hasBonus = dice.some(d => getSkillLevel(d, 'defenderMastery') > 0 || getSkillLevel(d, 'dashMastery') > 0 || getSkillLevel(d, 'doctorMastery') > 0);
     return hasBonus ? 4 : BASE_MAX_HAND;
 }
 

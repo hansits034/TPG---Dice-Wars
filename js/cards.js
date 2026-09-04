@@ -98,14 +98,16 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             } else {
                 const prevHp = die.hp;
                 const maxHp = die.maxHp || MAX_HP;
-                die.hp = Math.min(maxHp, die.hp + 7);
+                const docBonus = aliveDice(team).some(d => d.archetype === 'doctor' || getSkillLevel(d, 'doctorMastery') > 0) ? 5 : 0;
+                const healAmt = 7 + docBonus;
+                die.hp = Math.min(maxHp, die.hp + healAmt);
                 const actual = die.hp - prevHp;
                 if (team === 'player' && game.stats && actual > 0) {
                     game.stats.healDone.cards = (game.stats.healDone.cards || 0) + actual;
                     game.stats.healDone.total += actual;
                     updateStatsDisplay();
                 }
-                addFloatingText('+7 HP', die.q, die.r, '#34d399', 20);
+                addFloatingText(`+${healAmt} HP`, die.q, die.r, '#34d399', 20);
                 SFX.heal();
                 const p = hexToPixel(die.q, die.r);
                 spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#34d399', 18, 2, 800, 3);
@@ -366,5 +368,25 @@ function cancelCard() {
         setMessage('Card cancelled. Select a die to move.');
         setButtons(true, game.selectedDie != null);
         updateCardHand();
+    }
+}
+
+function destroyCard(idx) {
+    if (idx < 0 || idx >= game.playerHand.length) return;
+    const card = game.playerHand[idx];
+    if (game.activeCard && game.activeCard._handIdx === idx) {
+        game.activeCard = null;
+        game.cardTargets = [];
+        game.phase = 'PLAYER_TURN';
+    }
+    game.playerHand.splice(idx, 1);
+    setMessage(`🗑️ Destroyed ${card.name} card.`);
+    if (typeof SFX !== 'undefined' && SFX.dead) SFX.dead();
+    updateCardHand();
+}
+
+function destroyActiveCard() {
+    if (game.activeCard && game.activeCard._handIdx != null) {
+        destroyCard(game.activeCard._handIdx);
     }
 }

@@ -68,7 +68,7 @@ function updateDiceHP() {
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
-        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks||0}/2">⚡${d.zapStacks||0}</span>` : '';
+        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks || 0}/2">⚡${d.zapStacks || 0}</span>` : '';
         const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--cpu)" class="die-class-badge">${dieLabel}</span>
@@ -90,7 +90,7 @@ function updateDiceHP() {
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
-        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks||0}/2">⚡${d.zapStacks||0}</span>` : '';
+        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks || 0}/2">⚡${d.zapStacks || 0}</span>` : '';
         const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--player)" class="die-class-badge">${dieLabel}</span>
@@ -155,9 +155,14 @@ function setButtons(endEnabled, deselectEnabled) {
 function updateCardHand() {
     const el = document.getElementById('card-slots');
     const cancelBtn = document.getElementById('btn-cancel-card');
+    const discardBtn = document.getElementById('btn-discard-card');
     if (cancelBtn) {
         if (game.activeCard) cancelBtn.classList.add('active');
         else cancelBtn.classList.remove('active');
+    }
+    if (discardBtn) {
+        if (game.activeCard) discardBtn.classList.add('active');
+        else discardBtn.classList.remove('active');
     }
 
     if (!el) return;
@@ -171,7 +176,8 @@ function updateCardHand() {
             return `<div class="card-slot ${card.rarity}${activeCls}" onclick="onCardClick(${i})" id="card-slot-${i}">
                 <span class="card-icon">${card.icon}</span>
                 <span class="card-name">${card.name}</span>
-                <div class="card-tooltip"><strong>${card.name}</strong><br>${card.desc}<br><em style="color:var(--${card.rarity})">${card.rarity.toUpperCase()}</em></div>
+                <span class="card-discard-x" onclick="event.stopPropagation(); destroyCard(${i});" title="Destroy/discard this card">✕</span>
+                <div class="card-tooltip"><strong>${card.name}</strong><br>${card.desc}<br><em style="color:var(--${card.rarity})">${card.rarity.toUpperCase()}</em><br><span style="color:#f87171;font-size:0.65rem;">Click ✕ to destroy</span></div>
             </div>`;
         }).join('');
     }
@@ -270,8 +276,8 @@ function renderCodexRoleDetails(archId) {
 
     let activeSkillCount = 0;
     const skillsHTML = arch.skills.map((s) => {
-        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger';
-        let tagText = 'PASIF';
+        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'doctorMastery';
+        let tagText = 'PASSIVE';
         if (!isPassive) {
             activeSkillCount++;
             tagText = `SKILL ${activeSkillCount}`;
@@ -298,7 +304,7 @@ function renderCodexRoleDetails(archId) {
                     <div style="font-size:0.75rem;color:var(--text-dim);margin-top:2px;">Role Identity & Archetype</div>
                 </div>
             </div>
-            <span class="codex-role-tag">9 Playable Roles</span>
+            <span class="codex-role-tag">${ARCHETYPES.length} Playable Roles</span>
         </div>
         <div class="codex-skills-list">
             ${skillsHTML}
@@ -338,7 +344,7 @@ function openDiceGuideModal() {
             </div>
 
             <div style="text-align:center;margin-top:14px;">
-                <button class="overlay-btn" onclick="hideOverlay();">Tutup Codex</button>
+                <button class="overlay-btn" onclick="hideOverlay();">Close Codex</button>
             </div>
         </div>
     `);
@@ -354,16 +360,16 @@ function openHelpModal() {
             <h3>🎲 Core Rules & Archetypes</h3>
             <ul>
                 <li><strong>HP:</strong> Each die has <strong>50 Base HP</strong>.</li>
-                <li><strong>Damage:</strong> Equal to initial die face value.</li>
+                <li><strong>Damage:</strong> Equal to initial rolled die face value.</li>
                 <li><strong>Unique Roles:</strong> Each of your 3 dice has a distinct role.</li>
-                <li><strong>Classes:</strong> 🩸 Dracula, 😇 Angel, 🥷 Ninja, 🗡️ Samurai, 🔮 Telekinator, 🛡️ Defender, 😡 Rage, 💀 Necromancer, 🧙 Mage.</li>
+                <li><strong>Classes:</strong> 🩸 Dracula, 😇 Angel, 🥷 Ninja, 🗡️ Samurai, 🔮 Telekinator, 🛡️ Defender, 😡 Rage, 💀 Necromancer, 🧙 Mage, 🩺 Doctor.</li>
             </ul>
 
             <h3>⚡ Roguelike Upgrades (Every 4 Waves)</h3>
             <p>Choose 1 of 3 random skill level-ups to empower your dice!</p>
 
             <h3>✨ Event Tiles (Every 3 Waves)</h3>
-            <p>Sparkling tiles spawn on empty hexes. Step on them to pick up a card (Max 3 in hand, or 4 with Defender/Samurai).</p>
+            <p>Sparkling tiles spawn on empty hexes. Step on them to pick up a card (Max 3 in hand, or 4 with Defender/Samurai/Doctor).</p>
 
             <h3>⚡ Arena Blitz Events (Every 5 Waves - 16.6% Each)</h3>
             <ul>
@@ -372,7 +378,11 @@ function openHelpModal() {
                 <li><strong>🔥 Burning Tiles (16.6%):</strong> 3-5 tiles burn for 3 waves (3 damage on touch).</li>
                 <li><strong>🌿 Vine Trap (16.6%):</strong> 2 tiles sprout vines (traps dice on touch for 2 waves).</li>
                 <li><strong>🐝 Bee Attack (16.6%):</strong> 5 bees chase nearest die (5 damage & -1 move).</li>
-            <button class="overlay-btn" onclick="hideOverlay();">Close</button>
+                <li><strong>🧙 Magician (16.6%):</strong> Grants 2 random cards to everyone.</li>
+            </ul>
+            <div style="text-align:center;margin-top:14px;">
+                <button class="overlay-btn" onclick="hideOverlay();">Close</button>
+            </div>
         </div>
     `);
 }
@@ -425,7 +435,7 @@ function updateStatsDisplay() {
             return `
                 <div class="stat-row-item">
                     <div class="stat-row-label">
-                        <span>${d.icon} D${i+1} (${d.archetype.toUpperCase()})</span>
+                        <span>${d.icon} D${i + 1} (${d.archetype.toUpperCase()})</span>
                         <span style="color:#fb7185">${val} DMG</span>
                     </div>
                     <div class="stat-bar-bg">
@@ -450,7 +460,7 @@ function updateStatsDisplay() {
             return `
                 <div class="stat-row-item">
                     <div class="stat-row-label">
-                        <span>${d.icon} D${i+1} (${d.archetype.toUpperCase()})</span>
+                        <span>${d.icon} D${i + 1} (${d.archetype.toUpperCase()})</span>
                         <span style="color:#f43f5e">${val} Taken</span>
                     </div>
                     <div class="stat-bar-bg">
@@ -475,7 +485,7 @@ function updateStatsDisplay() {
             return `
                 <div class="stat-row-item">
                     <div class="stat-row-label">
-                        <span>${d.icon} D${i+1} (${d.archetype.toUpperCase()})</span>
+                        <span>${d.icon} D${i + 1} (${d.archetype.toUpperCase()})</span>
                         <span style="color:#34d399">+${val} HP</span>
                     </div>
                     <div class="stat-bar-bg">
@@ -513,7 +523,7 @@ function openGameSettingsModal() {
     let selectedHp = gameSettings.startHp || 50;
     let selectedDiff = gameSettings.difficulty || 'medium';
 
-    window._selectSettingHp = function(hp) {
+    window._selectSettingHp = function (hp) {
         selectedHp = hp;
         document.querySelectorAll('.hp-opt-btn').forEach(b => {
             if (parseInt(b.dataset.hp) === hp) b.classList.add('active');
@@ -521,7 +531,7 @@ function openGameSettingsModal() {
         });
     };
 
-    window._selectSettingDiff = function(diff) {
+    window._selectSettingDiff = function (diff) {
         selectedDiff = diff;
         document.querySelectorAll('.diff-opt-btn').forEach(b => {
             if (b.dataset.diff === diff) b.classList.add('active');
@@ -529,7 +539,7 @@ function openGameSettingsModal() {
         });
     };
 
-    window._confirmSettingsAndStart = function() {
+    window._confirmSettingsAndStart = function () {
         gameSettings.startHp = selectedHp;
         gameSettings.difficulty = selectedDiff;
         hideOverlay();
@@ -539,7 +549,7 @@ function openGameSettingsModal() {
     showOverlay(`
         <div class="overlay-box settings-modal-box">
             <h2>⚙️ MATCH SETUP & SETTINGS</h2>
-            <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:12px;">Sesuaikan konfigurasi HP awal dan tingkat kecerdasan AI sebelum bertanding:</p>
+            <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:12px;">Customize starting HP and AI difficulty before battle:</p>
             
             <div class="settings-section-title">❤️ Starting Dice HP</div>
             <div class="settings-options-grid">
@@ -574,7 +584,7 @@ function openGameSettingsModal() {
             </div>
 
             <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-                <button class="overlay-btn" style="background:rgba(255,255,255,0.08);margin:0;" onclick="hideOverlay()">Kembali</button>
+                <button class="overlay-btn" style="background:rgba(255,255,255,0.08);margin:0;" onclick="hideOverlay()">Back</button>
                 <button class="overlay-btn restart" style="margin:0;" onclick="_confirmSettingsAndStart()">⚔️ Start Battle</button>
             </div>
         </div>

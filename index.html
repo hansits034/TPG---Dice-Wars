@@ -71,9 +71,9 @@
     <div id="game-screen">
         <!-- Floating Left Stats Panel Widget -->
         <div class="stats-panel-widget" id="stats-panel-widget">
+            <button class="stats-toggle-btn" onclick="toggleStatsPanel()" id="stats-toggle-btn" title="Toggle Stats">◀</button>
             <div class="stats-header">
                 <span class="stats-title">📊 BATTLE STATS</span>
-                <button class="stats-toggle-btn" onclick="toggleStatsPanel()" id="stats-toggle-btn">◀</button>
             </div>
             <div class="stats-tabs-row">
                 <button class="stats-tab-btn active" id="tab-stat-dealt" onclick="switchStatsTab('dealt')">⚔️ Dealt</button>
@@ -129,7 +129,8 @@
         <!-- Card Hand -->
         <div class="card-hand-panel" id="card-panel">
             <div class="hand-label">🃏 Cards</div>
-            <button class="btn-cancel-card" id="btn-cancel-card" onclick="cancelCard()">❌ Cancel Card</button>
+            <button class="btn-cancel-card" id="btn-cancel-card" onclick="cancelCard()">❌ Cancel</button>
+            <button class="btn-discard-card" id="btn-discard-card" onclick="destroyActiveCard()" title="Destroy / discard this active card">🗑️ Discard</button>
             <div class="card-slots" id="card-slots"><span class="empty-hand">No cards yet</span></div>
         </div>
 

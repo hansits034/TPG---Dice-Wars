@@ -77,12 +77,29 @@ async function animateMove(die, path) {
 
 function rollDiceForUnit(die) {
     const maxVal = die.isSplit ? 3 : 6;
+    let baseVal = 1;
     if (die.team === 'cpu' && gameSettings && gameSettings.difficulty === 'hard' && !die.isSplit) {
         // Weighted for 4, 5, 6 (approx 70% chance to roll 4, 5, or 6)
         const weightedPool = [1, 2, 3, 4, 4, 5, 5, 5, 6, 6, 6];
-        return weightedPool[Math.floor(Math.random() * weightedPool.length)];
+        baseVal = weightedPool[Math.floor(Math.random() * weightedPool.length)];
+    } else {
+        baseVal = Math.floor(Math.random() * maxVal) + 1;
     }
-    return Math.floor(Math.random() * maxVal) + 1;
+
+    // Doctor Skill 2: Mutant Research (permanently adds +1/+2/+3/+4 to team dice values)
+    const teamDice = typeof aliveDice === 'function' ? aliveDice(die.team) : (die.team === 'player' ? game.playerDice : game.cpuDice);
+    if (teamDice) {
+        let maxMutantBonus = 0;
+        for (const d of teamDice) {
+            const lvl = getSkillLevel(d, 'mutantResearch');
+            if (lvl > maxMutantBonus) maxMutantBonus = lvl;
+        }
+        if (maxMutantBonus > 0) {
+            baseVal += maxMutantBonus;
+        }
+    }
+
+    return baseVal;
 }
 
 function rollDice(n, isSplit=false) {
@@ -361,6 +378,29 @@ async function tickWaveEffects() {
         }
     }
 
+    // Doctor Noble Saviour (Gain 1 free Heal card every 4 waves at Lvl 1, every 3 waves at Lvl 2)
+    for (const d of allDice()) {
+        if (d.hp <= 0) continue;
+        const saviourLvl = getSkillLevel(d, 'nobleSaviour');
+        if (saviourLvl > 0 && d.frozen === 0) {
+            const interval = saviourLvl === 1 ? 4 : 3;
+            if (game.wave % interval === 0) {
+                const maxH = getMaxHandSize(d.team);
+                const hand = d.team === 'player' ? game.playerHand : game.cpuHand;
+                if (hand.length < maxH) {
+                    const healCard = CARD_DEFS.find(c => c.id === 'heal');
+                    if (healCard) {
+                        hand.push({ ...healCard });
+                        if (d.team === 'player') {
+                            addFloatingText('🩺 Free Heal Pill!', d.q, d.r, '#34d399', 16);
+                            updateCardHand();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     for (const [k, v] of game.eventTiles) {
         v.wavesLeft--;
         if (v.wavesLeft <= 0) game.eventTiles.delete(k);
@@ -457,7 +497,7 @@ async function executeZapSkill(mageDie) {
     let isCrit = false;
     const focusLvl = getSkillLevel(mageDie, 'focus');
     if (focusLvl > 0 && !mageDie.damagedThisWave) {
-        const critChance = focusLvl === 1 ? 0.35 : 0.60;
+        const critChance = focusLvl === 1 ? 0.35 : focusLvl === 2 ? 0.65 : 0.99;
         if (Math.random() < critChance) {
             isCrit = true;
             zapDmg *= 2;
@@ -540,7 +580,7 @@ async function beginPlayerTurn() {
 
     alive.forEach((d, i) => {
         d.turnRoll = vals[i];
-        d.baseDamage = vals[i]; // Damage dasar mengikuti mata dadu hasil kocokan turn ini!
+        d.baseDamage = vals[i]; // Base damage equals rolled die value for this turn!
         const flashLvl = getSkillLevel(d, 'flash');
         const flashBonus = flashLvl === 1 ? 1 : flashLvl === 2 ? 2 : flashLvl === 3 ? 4 : 0;
         d.moveAllowance = Math.max(0, vals[i] + flashBonus - d.moveDebuff);
