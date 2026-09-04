@@ -76,11 +76,17 @@ const ARCHETYPES = [
     {
         id: 'mage', name: 'Mage', icon: '🧙',
         skills: [
-            { id: 'poke', name: 'Poke', desc: 'At turn start, randomly zaps 1 enemy die for die roll value + 0 dmg (+2 at Lvl 2, +4 at Lvl 3, +6 at Lvl 4)', maxLvl: 4, curLvl: 1 },
-            { id: 'focus', name: 'Focus', desc: 'If unhurt in previous wave: Poke has 35% chance (60% at Lvl 2) to deal x2 CRIT damage', maxLvl: 2, curLvl: 0 }
+            { id: 'zap', name: 'Zap', desc: 'Gain +1 Zap stack every 2 waves (Max 2). Deals damage equal to hex distance to nearest enemy (+1 dmg per Lvl). Click Zap button to fire!', maxLvl: 3, curLvl: 1 },
+            { id: 'focus', name: 'Focus', desc: 'If unhurt in previous wave: Zap has 35% chance (60% at Lvl 2) to deal x2 CRIT damage', maxLvl: 2, curLvl: 0 }
         ]
     }
 ];
+
+// Match Settings: Starting HP & AI Difficulty
+let gameSettings = {
+    startHp: 50,
+    difficulty: 'medium' // 'easy', 'medium', 'hard'
+};
 
 // Default 3 distinct roles for player
 let selectedPlayerClasses = ['dracula', 'ninja', 'samurai'];

@@ -223,6 +223,12 @@ function triggerTileEffectOnDie(die) {
         die.damagedThisWave = true;
         if (die.hp < 0) die.hp = 0;
 
+        if (die.team === 'player' && game.stats) {
+            game.stats.damageTaken[die.id] = (game.stats.damageTaken[die.id] || 0) + 3;
+            game.stats.damageTaken.total += 3;
+            if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
+        }
+
         const backLvl = getSkillLevel(die, 'backStronger');
         if (backLvl > 0 || die.archetype === 'Rage') {
             const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;

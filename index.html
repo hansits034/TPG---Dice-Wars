@@ -62,13 +62,29 @@
         </div>
 
         <div class="start-actions-wrapper">
-            <button class="btn-start" onclick="startGame()">START BATTLE</button>
+            <button class="btn-start" onclick="openGameSettingsModal()">START BATTLE</button>
             <button class="btn-guide" onclick="openDiceGuideModal()">DICE GUIDE</button>
         </div>
     </div>
 
     <!-- GAME SCREEN -->
     <div id="game-screen">
+        <!-- Floating Left Stats Panel Widget -->
+        <div class="stats-panel-widget" id="stats-panel-widget">
+            <div class="stats-header">
+                <span class="stats-title">📊 BATTLE STATS</span>
+                <button class="stats-toggle-btn" onclick="toggleStatsPanel()" id="stats-toggle-btn">◀</button>
+            </div>
+            <div class="stats-tabs-row">
+                <button class="stats-tab-btn active" id="tab-stat-dealt" onclick="switchStatsTab('dealt')">⚔️ Dealt</button>
+                <button class="stats-tab-btn" id="tab-stat-taken" onclick="switchStatsTab('taken')">🛡️ Taken</button>
+                <button class="stats-tab-btn" id="tab-stat-heal" onclick="switchStatsTab('heal')">💚 Heal</button>
+            </div>
+            <div class="stats-content-area" id="stats-content-area">
+                <!-- Injected via updateStatsDisplay() in ui.js -->
+            </div>
+        </div>
+
         <!-- CPU info -->
         <div class="info-bar" id="cpu-bar">
             <span class="team-label cpu">🔴 COMPUTER</span>
@@ -105,9 +121,9 @@
         <div class="controls-bar" id="controls-bar">
             <div class="roll-dice-display" id="roll-display"></div>
             <div class="moves-display" id="moves-display">Moves: 0</div>
-            <button class="btn-action btn-deselect" id="btn-deselect" disabled onclick="deselectDie()">↩
-                Deselect</button>
+            <button class="btn-action btn-deselect" id="btn-deselect" disabled onclick="deselectDie()">↩ Deselect</button>
             <button class="btn-action btn-end" id="btn-end" disabled onclick="endTurn()">⏭ End Turn</button>
+            <button class="btn-action btn-zap" id="btn-zap" onclick="triggerPlayerMageZap()" title="Trigger Mage Zap skill based on distance to nearest enemy">⚡ ZAP (0)</button>
         </div>
 
         <!-- Card Hand -->

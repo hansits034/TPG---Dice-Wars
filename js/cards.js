@@ -96,7 +96,15 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             if (die.antiHealTurns > 0) {
                 addFloatingText('🚫 Bleed Anti-Heal!', die.q, die.r, '#ef4444', 18);
             } else {
-                die.hp = Math.min(MAX_HP, die.hp + 7);
+                const prevHp = die.hp;
+                const maxHp = die.maxHp || MAX_HP;
+                die.hp = Math.min(maxHp, die.hp + 7);
+                const actual = die.hp - prevHp;
+                if (team === 'player' && game.stats && actual > 0) {
+                    game.stats.healDone.cards = (game.stats.healDone.cards || 0) + actual;
+                    game.stats.healDone.total += actual;
+                    updateStatsDisplay();
+                }
                 addFloatingText('+7 HP', die.q, die.r, '#34d399', 20);
                 SFX.heal();
                 const p = hexToPixel(die.q, die.r);

@@ -13,9 +13,10 @@ let stopwatchInterval = null;
 function createDie(id, q, r, team, archetypeId='dracula', isSplit=false) {
     const arch = ARCHETYPES.find(a => a.id === archetypeId) || ARCHETYPES[0];
     const skills = JSON.parse(JSON.stringify(arch.skills));
+    const maxHp = gameSettings ? gameSettings.startHp : MAX_HP;
 
     return {
-        id, q, r, hp: MAX_HP, baseDamage: 1, value: 1, team,
+        id, q, r, hp: maxHp, maxHp: maxHp, baseDamage: 1, value: 1, team,
         renderX: null, renderY: null,
         moveAllowance: 0,
         frozen: 0,
@@ -29,6 +30,7 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false) {
         archetype: arch.id,
         icon: arch.icon,
         skills,
+        zapStacks: arch.id === 'mage' ? 1 : 0, // Starts with 1 stack
         bleedStacks: 0,
         bleedMoveDistance: 0,
         antiHealTurns: 0,
@@ -80,11 +82,16 @@ function resetGame() {
         lastAttackedId: null,
         turnTimeLeft: TURN_TIME_LIMIT,
         matchTimeSeconds: 0,
+        stats: {
+            damageDealt: { p1: 0, p2: 0, p3: 0, total: 0 },
+            damageTaken: { p1: 0, p2: 0, p3: 0, total: 0 },
+            healDone: { p1: 0, p2: 0, p3: 0, cards: 0, total: 0 }
+        }
     };
     particles = [];
     floatingTexts = [];
-    stopTurnTimer();
-    stopStopwatch();
+    if (typeof stopTurnTimer === 'function') stopTurnTimer();
+    if (typeof stopStopwatch === 'function') stopStopwatch();
 }
 
 function allDice() { return game.playerDice && game.cpuDice ? [...game.playerDice, ...game.cpuDice] : []; }

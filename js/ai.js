@@ -223,9 +223,24 @@ async function beginCpuTurn() {
     updateRollDisplay(vals, 'cpu');
     updateDiceHP();
 
-    // CPU Mage Poke Execution
-    await executeMagePoke('cpu', alive);
-    if (checkWin()) return;
+    // CPU Mage Zap Skill Execution
+    const cpuMage = alive.find(d => (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) && (d.zapStacks || 0) > 0 && d.frozen === 0);
+    if (cpuMage) {
+        const pAlive = aliveDice('player').filter(pd => !pd.concealed);
+        if (pAlive.length > 0) {
+            let maxDist = 0;
+            pAlive.forEach(pd => {
+                const dist = hexDist(cpuMage.q, cpuMage.r, pd.q, pd.r);
+                if (dist > maxDist) maxDist = dist;
+            });
+            // Fire Zap if at good range (distance >= 3) or at 2 stacks
+            if (maxDist >= 3 || cpuMage.zapStacks >= 2) {
+                await executeZapSkill(cpuMage);
+                await delay(500);
+                if (checkWin()) return;
+            }
+        }
+    }
 
     // CPU Telekinator Psychic Push
     for (const d of alive) {
@@ -283,8 +298,29 @@ async function beginCpuTurn() {
             }
         }
 
+        const isSmartAI = gameSettings && (gameSettings.difficulty === 'medium' || gameSettings.difficulty === 'hard');
+
         if (attackMoves.length > 0) {
-            const chosen = attackMoves[Math.floor(Math.random() * attackMoves.length)];
+            let chosen = attackMoves[0];
+            if (isSmartAI) {
+                // Score attack moves: prefer killing enemy, high damage, or targeting weak enemies
+                let bestScore = -Infinity;
+                for (const move of attackMoves) {
+                    const enemy = getDieAt(move.targetHex.q, move.targetHex.r);
+                    let score = 50;
+                    if (enemy) {
+                        const effDmg = getDieEffectiveDamage(move.die);
+                        if (enemy.hp <= effDmg) score += 100; // Lethal bonus!
+                        else score += (effDmg * 5) - enemy.hp;
+                    }
+                    if (score > bestScore) {
+                        bestScore = score;
+                        chosen = move;
+                    }
+                }
+            } else {
+                chosen = attackMoves[Math.floor(Math.random() * attackMoves.length)];
+            }
             const { die, targetHex, info, parents } = chosen;
             const path = reconstructPath(parents, die.q, die.r, targetHex.q, targetHex.r);
 
@@ -365,6 +401,13 @@ async function beginCpuTurn() {
             const p = hexToPixel(targetHex.q, targetHex.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#ff4466', 15, 3, 600, 3);
 
+            // Track stats: Damage Taken by Player Die
+            if (game.stats) {
+                game.stats.damageTaken[enemyDie.id] = (game.stats.damageTaken[enemyDie.id] || 0) + damage;
+                game.stats.damageTaken.total += damage;
+                updateStatsDisplay();
+            }
+
             if (enemyDie.hp <= 0) {
                 enemyDie.hp = 0;
                 addFloatingText('💀 DESTROYED!', targetHex.q, targetHex.r + 0.5, '#ff2244', 16);
@@ -436,17 +479,51 @@ async function beginCpuTurn() {
         } else if (nonAttackMoves.length > 0) {
             const playerDice = aliveDice('player').filter(d => !d.concealed);
             let bestMove = nonAttackMoves[0];
-            let bestScore = Infinity;
 
-            for (const move of nonAttackMoves) {
-                let minDist = Infinity;
-                for (const pd of playerDice) {
-                    const d = hexDist(move.targetHex.q, move.targetHex.r, pd.q, pd.r);
-                    if (d < minDist) minDist = d;
+            if (isSmartAI) {
+                // Smart positional movement: Mage stays back, others approach strategically avoiding hazards
+                let bestScore = -Infinity;
+                for (const move of nonAttackMoves) {
+                    let score = 0;
+                    let minDistToPlayer = Infinity;
+                    for (const pd of playerDice) {
+                        const d = hexDist(move.targetHex.q, move.targetHex.r, pd.q, pd.r);
+                        if (d < minDistToPlayer) minDistToPlayer = d;
+                    }
+
+                    if (move.die.archetype === 'mage') {
+                        // Mage wants distance (3-5 tiles away) to maximize Zap
+                        score = (minDistToPlayer >= 3 && minDistToPlayer <= 5) ? 80 - Math.abs(minDistToPlayer - 4) * 10 : 20;
+                    } else {
+                        // Other classes want to close in
+                        score = 50 - minDistToPlayer * 5;
+                    }
+
+                    // Penalize hazardous tiles
+                    const hexKey = hKey(move.targetHex.q, move.targetHex.r);
+                    if (game.burningTiles && game.burningTiles.has(hexKey)) score -= 60;
+                    if (game.vineTraps && game.vineTraps.has(hexKey)) score -= 40;
+                    if (game.voidTiles && game.voidTiles.has(hexKey)) score -= 100;
+                    // Reward event tile pickup
+                    if (game.eventTiles && game.eventTiles.has(hexKey)) score += 30;
+
+                    if (score > bestScore) {
+                        bestScore = score;
+                        bestMove = move;
+                    }
                 }
-                if (minDist < bestScore) {
-                    bestScore = minDist;
-                    bestMove = move;
+            } else {
+                let minD = Infinity;
+                for (const move of nonAttackMoves) {
+                    let dToP = Infinity;
+                    for (const pd of playerDice) {
+                        const d = hexDist(move.targetHex.q, move.targetHex.r, pd.q, pd.r);
+                        if (d < dToP) dToP = d;
+                    }
+                    if (dToP < minD) {
+                        minD = dToP;
+                        bestMove = move;
+                    }
                 }
             }
 

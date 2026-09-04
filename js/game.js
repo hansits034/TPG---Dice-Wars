@@ -77,6 +77,11 @@ async function animateMove(die, path) {
 
 function rollDiceForUnit(die) {
     const maxVal = die.isSplit ? 3 : 6;
+    if (die.team === 'cpu' && gameSettings && gameSettings.difficulty === 'hard' && !die.isSplit) {
+        // Weighted for 4, 5, 6 (approx 70% chance to roll 4, 5, or 6)
+        const weightedPool = [1, 2, 3, 4, 4, 5, 5, 5, 6, 6, 6];
+        return weightedPool[Math.floor(Math.random() * weightedPool.length)];
+    }
     return Math.floor(Math.random() * maxVal) + 1;
 }
 
@@ -224,16 +229,26 @@ function tickStatusEffects(team) {
     dice.forEach(d => {
         const healLvl = getSkillLevel(d, 'healAid');
         if (healLvl > 0 && d.hp > 0 && d.frozen === 0) {
+            let totalHealedThisTurn = 0;
             dice.forEach(td => {
                 if (td.hp > 0) {
                     if (td.antiHealTurns > 0) {
                         addFloatingText(`🚫 Bleed Anti-Heal!`, td.q, td.r, '#ef4444', 14);
                     } else {
-                        td.hp = Math.min(MAX_HP, td.hp + healLvl);
+                        const prevHp = td.hp;
+                        const maxHp = td.maxHp || MAX_HP;
+                        td.hp = Math.min(maxHp, td.hp + healLvl);
+                        const actual = td.hp - prevHp;
+                        totalHealedThisTurn += actual;
                         addFloatingText(`+${healLvl} 😇`, td.q, td.r, '#34d399', 16);
                     }
                 }
             });
+            if (team === 'player' && game.stats && totalHealedThisTurn > 0) {
+                game.stats.healDone[d.id] = (game.stats.healDone[d.id] || 0) + totalHealedThisTurn;
+                game.stats.healDone.total += totalHealedThisTurn;
+                updateStatsDisplay();
+            }
             SFX.heal();
         }
     });
@@ -260,6 +275,18 @@ async function tickWaveEffects() {
         d.cloneActive = false;
         // Reset damagedThisWave flag at start of wave
         d.damagedThisWave = false;
+    }
+
+    // Mage Zap Stack generation (every 2 waves, max 2 stacks)
+    if (game.wave % 2 === 0) {
+        for (const d of allDice()) {
+            if (d.hp <= 0) continue;
+            const zapLvl = getSkillLevel(d, 'zap');
+            if ((d.archetype === 'mage' || zapLvl > 0) && d.frozen === 0) {
+                d.zapStacks = Math.min(2, (d.zapStacks || 0) + 1);
+                addFloatingText(`⚡ +1 Zap Stack (${d.zapStacks}/2)`, d.q, d.r, '#c084fc', 18);
+            }
+        }
     }
 
     // Passive grant card every 10 waves (Samurai -> Dash, Defender -> Conceal)
@@ -402,62 +429,92 @@ async function handleTurnEndSequence(finishedTeam) {
     }
 }
 
-async function executeMagePoke(team, aliveUnits) {
-    const enemyTeam = team === 'player' ? 'cpu' : 'player';
+async function executeZapSkill(mageDie) {
+    if (!mageDie || (mageDie.zapStacks || 0) <= 0) return false;
+    const enemyTeam = mageDie.team === 'player' ? 'cpu' : 'player';
     const enemies = aliveDice(enemyTeam).filter(d => !d.concealed);
-    if (enemies.length === 0) return;
+    if (enemies.length === 0) return false;
 
-    for (const die of aliveUnits) {
-        const pokeLvl = getSkillLevel(die, 'poke');
-        if (pokeLvl > 0 && die.frozen === 0) {
-            const bonusDmg = pokeLvl === 1 ? 0 : pokeLvl === 2 ? 2 : pokeLvl === 3 ? 4 : 6;
-            const rollVal = die.turnRoll || 1;
-            let totalPokeDmg = rollVal + bonusDmg;
-
-            // Check Focus skill (if not damaged this/previous wave)
-            let isCrit = false;
-            const focusLvl = getSkillLevel(die, 'focus');
-            if (focusLvl > 0 && !die.damagedThisWave) {
-                const critChance = focusLvl === 1 ? 0.35 : 0.60;
-                if (Math.random() < critChance) {
-                    isCrit = true;
-                    totalPokeDmg *= 2;
-                }
-            }
-
-            const targetEnemy = enemies[Math.floor(Math.random() * enemies.length)];
-            targetEnemy.hp -= totalPokeDmg;
-            targetEnemy.totalDamageTaken = (targetEnemy.totalDamageTaken || 0) + totalPokeDmg;
-            targetEnemy.damagedThisWave = true;
-            if (targetEnemy.hp < 0) targetEnemy.hp = 0;
-
-            SFX.attack();
-            const p = hexToPixel(targetEnemy.q, targetEnemy.r);
-            spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#a855f7', 15, 3, 600);
-
-            if (isCrit) {
-                addFloatingText(`💥 CRIT POKE -${totalPokeDmg}!`, targetEnemy.q, targetEnemy.r, '#fbbf24', 22);
-            } else {
-                addFloatingText(`⚡ POKE -${totalPokeDmg}!`, targetEnemy.q, targetEnemy.r, '#c084fc', 18);
-            }
-
-            // Check Rage Back Stronger
-            const enemyBackLvl = getSkillLevel(targetEnemy, 'backStronger');
-            if (enemyBackLvl > 0 || targetEnemy.archetype === 'Rage') {
-                const reqDmg = enemyBackLvl === 2 ? 9 : enemyBackLvl === 3 ? 7 : 10;
-                const newBonus = Math.floor(targetEnemy.totalDamageTaken / reqDmg);
-                if (newBonus > (targetEnemy.bonusDamageFromDamageTaken || 0)) {
-                    const diff = newBonus - (targetEnemy.bonusDamageFromDamageTaken || 0);
-                    targetEnemy.bonusDamageFromDamageTaken = newBonus;
-                    addFloatingText(`😡 Rage +${diff} DMG!`, targetEnemy.q, targetEnemy.r, '#ef4444', 18);
-                }
-            }
-
-            updateDiceHP();
-            await delay(400);
-            if (checkWin()) return;
+    // Find nearest enemy and calculate distance
+    let nearestEnemy = null;
+    let minDist = Infinity;
+    for (const ed of enemies) {
+        const dist = hexDist(mageDie.q, mageDie.r, ed.q, ed.r);
+        if (dist < minDist) {
+            minDist = dist;
+            nearestEnemy = ed;
         }
     }
+
+    if (!nearestEnemy) return false;
+
+    mageDie.zapStacks--;
+    const zapLvl = getSkillLevel(mageDie, 'zap');
+    const zapBonus = zapLvl > 0 ? (zapLvl - 1) : 0;
+    let zapDmg = Math.max(1, minDist + zapBonus);
+
+    // Check Focus Skill CRIT (if undamaged)
+    let isCrit = false;
+    const focusLvl = getSkillLevel(mageDie, 'focus');
+    if (focusLvl > 0 && !mageDie.damagedThisWave) {
+        const critChance = focusLvl === 1 ? 0.35 : 0.60;
+        if (Math.random() < critChance) {
+            isCrit = true;
+            zapDmg *= 2;
+        }
+    }
+
+    // Apply damage
+    nearestEnemy.hp -= zapDmg;
+    nearestEnemy.totalDamageTaken = (nearestEnemy.totalDamageTaken || 0) + zapDmg;
+    nearestEnemy.damagedThisWave = true;
+    if (nearestEnemy.hp < 0) nearestEnemy.hp = 0;
+
+    // Track in stats
+    if (mageDie.team === 'player' && game.stats) {
+        game.stats.damageDealt[mageDie.id] = (game.stats.damageDealt[mageDie.id] || 0) + zapDmg;
+        game.stats.damageDealt.total += zapDmg;
+        updateStatsDisplay();
+    } else if (mageDie.team === 'cpu' && game.stats) {
+        game.stats.damageTaken[nearestEnemy.id] = (game.stats.damageTaken[nearestEnemy.id] || 0) + zapDmg;
+        game.stats.damageTaken.total += zapDmg;
+        updateStatsDisplay();
+    }
+
+    SFX.attack();
+    const p = hexToPixel(nearestEnemy.q, nearestEnemy.r);
+    spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#a855f7', 20, 3, 700);
+
+    if (isCrit) {
+        addFloatingText(`⚡💥 CRIT ZAP -${zapDmg} (Dist: ${minDist})!`, nearestEnemy.q, nearestEnemy.r, '#fbbf24', 22);
+    } else {
+        addFloatingText(`⚡ ZAP -${zapDmg} (Dist: ${minDist})!`, nearestEnemy.q, nearestEnemy.r, '#c084fc', 18);
+    }
+
+    // Check Rage Back Stronger
+    const enemyBackLvl = getSkillLevel(nearestEnemy, 'backStronger');
+    if (enemyBackLvl > 0 || nearestEnemy.archetype === 'Rage') {
+        const reqDmg = enemyBackLvl === 2 ? 9 : enemyBackLvl === 3 ? 7 : 10;
+        const newBonus = Math.floor(nearestEnemy.totalDamageTaken / reqDmg);
+        if (newBonus > (nearestEnemy.bonusDamageFromDamageTaken || 0)) {
+            const diff = newBonus - (nearestEnemy.bonusDamageFromDamageTaken || 0);
+            nearestEnemy.bonusDamageFromDamageTaken = newBonus;
+            addFloatingText(`😡 Rage +${diff} DMG!`, nearestEnemy.q, nearestEnemy.r, '#ef4444', 18);
+        }
+    }
+
+    updateDiceHP();
+    updateZapButton();
+    if (checkWin()) return true;
+    return true;
+}
+
+async function triggerPlayerMageZap() {
+    if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
+    const playerMage = aliveDice('player').find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
+    if (!playerMage || (playerMage.zapStacks || 0) <= 0) return;
+
+    await executeZapSkill(playerMage);
 }
 
 async function beginPlayerTurn() {
@@ -495,10 +552,8 @@ async function beginPlayerTurn() {
     updateMoves();
     updateRollDisplay(vals, 'player');
     updateDiceHP();
-
-    // Mage Poke Execution
-    await executeMagePoke('player', alive);
-    if (checkWin()) return;
+    updateZapButton();
+    updateStatsDisplay();
 
     // Check Telekinator Psychic Push skill
     for (const d of alive) {
@@ -645,6 +700,13 @@ async function handlePlayerMove(tq, tr) {
         enemyDie.damagedThisWave = true;
         SFX.attack();
 
+        // Track stats: Damage Dealt by Player Die
+        if (game.stats) {
+            game.stats.damageDealt[die.id] = (game.stats.damageDealt[die.id] || 0) + damage;
+            game.stats.damageDealt.total += damage;
+            updateStatsDisplay();
+        }
+
         // Check Rage Back Stronger on enemy
         const enemyBackLvl = getSkillLevel(enemyDie, 'backStronger');
         if (enemyBackLvl > 0 || enemyDie.archetype === 'Rage') {
@@ -666,6 +728,13 @@ async function handlePlayerMove(tq, tr) {
             die.damagedThisWave = true;
             if (die.hp < 0) die.hp = 0;
 
+            // Track stats: Damage Taken by Player Die from Thorns
+            if (game.stats) {
+                game.stats.damageTaken[die.id] = (game.stats.damageTaken[die.id] || 0) + reflectDmg;
+                game.stats.damageTaken.total += reflectDmg;
+                updateStatsDisplay();
+            }
+
             const dieBackLvl = getSkillLevel(die, 'backStronger');
             if (dieBackLvl > 0 || die.archetype === 'Rage') {
                 const reqDmg = dieBackLvl === 2 ? 9 : dieBackLvl === 3 ? 7 : 10;
@@ -684,7 +753,15 @@ async function handlePlayerMove(tq, tr) {
         const healLvl = getSkillLevel(die, 'healOnAtk');
         if (healLvl > 0 && die.antiHealTurns === 0) {
             const healAmt = healLvl === 1 ? 2 : healLvl === 2 ? 3 : 5;
-            die.hp = Math.min(MAX_HP, die.hp + healAmt);
+            const prevHp = die.hp;
+            const maxHp = die.maxHp || MAX_HP;
+            die.hp = Math.min(maxHp, die.hp + healAmt);
+            const actualHeal = die.hp - prevHp;
+            if (game.stats && actualHeal > 0) {
+                game.stats.healDone[die.id] = (game.stats.healDone[die.id] || 0) + actualHeal;
+                game.stats.healDone.total += actualHeal;
+                updateStatsDisplay();
+            }
             addFloatingText(`+${healAmt} 🩸`, die.q, die.r, '#34d399', 16);
         } else if (healLvl > 0 && die.antiHealTurns > 0) {
             addFloatingText(`🚫 Anti-Healed!`, die.q, die.r, '#ef4444', 14);

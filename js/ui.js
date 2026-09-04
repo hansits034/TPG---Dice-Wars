@@ -59,7 +59,8 @@ function updateDiceHP() {
     if (!cpuEl || !plEl) return;
 
     cpuEl.innerHTML = game.cpuDice.map((d, i) => {
-        const pct = Math.max(0, d.hp / MAX_HP);
+        const maxH = d.maxHp || MAX_HP;
+        const pct = Math.max(0, d.hp / maxH);
         const color = pct > 0.5 ? '#fb7185' : pct > 0.25 ? '#fbbf24' : '#ef4444';
         const frozenCls = d.frozen > 0 ? ' frozen' : '';
         const concealCls = d.concealed > 0 ? ' concealed' : '';
@@ -67,18 +68,21 @@ function updateDiceHP() {
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
+        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks||0}/2">⚡${d.zapStacks||0}</span>` : '';
         const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--cpu)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
             <span>${Math.max(0, d.hp)}</span>
             ${rageBadge}
+            ${zapBadge}
             ${d.moveAllowance > 0 && game.currentTurn === 'cpu' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
         </div>`;
     }).join('');
 
     plEl.innerHTML = game.playerDice.map((d, i) => {
-        const pct = Math.max(0, d.hp / MAX_HP);
+        const maxH = d.maxHp || MAX_HP;
+        const pct = Math.max(0, d.hp / maxH);
         const color = pct > 0.5 ? '#34d399' : pct > 0.25 ? '#fbbf24' : '#ef4444';
         const frozenCls = d.frozen > 0 ? ' frozen' : '';
         const concealCls = d.concealed > 0 ? ' concealed' : '';
@@ -86,12 +90,14 @@ function updateDiceHP() {
         const backLvl = getSkillLevel(d, 'backStronger');
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
+        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks||0}/2">⚡${d.zapStacks||0}</span>` : '';
         const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--player)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
             <span>${Math.max(0, d.hp)}</span>
             ${rageBadge}
+            ${zapBadge}
             ${d.moveAllowance > 0 && game.currentTurn === 'player' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
         </div>`;
     }).join('');
@@ -123,11 +129,27 @@ function setMessage(msg) {
     if (el) el.textContent = msg;
 }
 
+function updateZapButton() {
+    const zapBtn = document.getElementById('btn-zap');
+    if (!zapBtn) return;
+    const playerMage = aliveDice('player').find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
+    if (!playerMage) {
+        zapBtn.style.display = 'none';
+        return;
+    }
+    zapBtn.style.display = 'inline-flex';
+    const stacks = playerMage.zapStacks || 0;
+    zapBtn.textContent = `⚡ ZAP (${stacks})`;
+    const isPlayerTurn = game.phase === 'PLAYER_TURN' && game.currentTurn === 'player';
+    zapBtn.disabled = !isPlayerTurn || stacks <= 0 || playerMage.frozen > 0 || playerMage.trapped > 0;
+}
+
 function setButtons(endEnabled, deselectEnabled) {
     const endBtn = document.getElementById('btn-end');
     const desBtn = document.getElementById('btn-deselect');
     if (endBtn) endBtn.disabled = !endEnabled;
     if (desBtn) desBtn.disabled = !deselectEnabled;
+    updateZapButton();
 }
 
 function updateCardHand() {
@@ -350,10 +372,211 @@ function openHelpModal() {
                 <li><strong>🔥 Burning Tiles (16.6%):</strong> 3-5 tiles burn for 3 waves (3 damage on touch).</li>
                 <li><strong>🌿 Vine Trap (16.6%):</strong> 2 tiles sprout vines (traps dice on touch for 2 waves).</li>
                 <li><strong>🐝 Bee Attack (16.6%):</strong> 5 bees chase nearest die (5 damage & -1 move).</li>
-                <li><strong>🧙 Magician (16.6%):</strong> Grants 2 free cards to both sides.</li>
-            </ul>
-
             <button class="overlay-btn" onclick="hideOverlay();">Close</button>
+        </div>
+    `);
+}
+
+// ==========================================================
+// STATS PANEL & MATCH SETTINGS MODAL
+// ==========================================================
+let currentStatsTab = 'dealt'; // 'dealt', 'taken', 'heal'
+let statsPanelCollapsed = false;
+
+function toggleStatsPanel() {
+    const p = document.getElementById('stats-panel-widget');
+    const btn = document.getElementById('stats-toggle-btn');
+    if (!p) return;
+    statsPanelCollapsed = !statsPanelCollapsed;
+    if (statsPanelCollapsed) {
+        p.classList.add('collapsed');
+        if (btn) btn.textContent = '▶';
+    } else {
+        p.classList.remove('collapsed');
+        if (btn) btn.textContent = '◀';
+    }
+}
+
+function switchStatsTab(tab) {
+    currentStatsTab = tab;
+    ['dealt', 'taken', 'heal'].forEach(t => {
+        const btn = document.getElementById(`tab-stat-${t}`);
+        if (btn) {
+            if (t === tab) btn.classList.add('active');
+            else btn.classList.remove('active');
+        }
+    });
+    updateStatsDisplay();
+}
+
+function updateStatsDisplay() {
+    const area = document.getElementById('stats-content-area');
+    if (!area || !game.stats) return;
+
+    const pDice = game.playerDice || [];
+    const colors = ['#34d399', '#60a5fa', '#f59e0b']; // D1, D2, D3
+
+    if (currentStatsTab === 'dealt') {
+        const data = game.stats.damageDealt || { p1: 0, p2: 0, p3: 0, total: 0 };
+        const maxVal = Math.max(1, data.total || (data.p1 + data.p2 + data.p3));
+        const rowsHTML = pDice.map((d, i) => {
+            const val = data[d.id] || 0;
+            const pct = Math.round((val / maxVal) * 100);
+            return `
+                <div class="stat-row-item">
+                    <div class="stat-row-label">
+                        <span>${d.icon} D${i+1} (${d.archetype.toUpperCase()})</span>
+                        <span style="color:#fb7185">${val} DMG</span>
+                    </div>
+                    <div class="stat-bar-bg">
+                        <div class="stat-bar-fill" style="width:${pct}%;background:${colors[i % 3]};"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        area.innerHTML = `
+            <div class="stat-bar-group">
+                ${rowsHTML}
+            </div>
+            <div class="stat-total-summary">Total Damage Dealt: <strong style="color:#fb7185">${data.total || 0}</strong></div>
+        `;
+    } else if (currentStatsTab === 'taken') {
+        const data = game.stats.damageTaken || { p1: 0, p2: 0, p3: 0, total: 0 };
+        const maxVal = Math.max(1, data.total || (data.p1 + data.p2 + data.p3));
+        const rowsHTML = pDice.map((d, i) => {
+            const val = data[d.id] || 0;
+            const pct = Math.round((val / maxVal) * 100);
+            return `
+                <div class="stat-row-item">
+                    <div class="stat-row-label">
+                        <span>${d.icon} D${i+1} (${d.archetype.toUpperCase()})</span>
+                        <span style="color:#f43f5e">${val} Taken</span>
+                    </div>
+                    <div class="stat-bar-bg">
+                        <div class="stat-bar-fill" style="width:${pct}%;background:#f43f5e;"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        area.innerHTML = `
+            <div class="stat-bar-group">
+                ${rowsHTML}
+            </div>
+            <div class="stat-total-summary">Total Damage Taken: <strong style="color:#f43f5e">${data.total || 0}</strong></div>
+        `;
+    } else if (currentStatsTab === 'heal') {
+        const data = game.stats.healDone || { p1: 0, p2: 0, p3: 0, cards: 0, total: 0 };
+        const maxVal = Math.max(1, data.total || (data.p1 + data.p2 + data.p3 + data.cards));
+        const rowsHTML = pDice.map((d, i) => {
+            const val = data[d.id] || 0;
+            const pct = Math.round((val / maxVal) * 100);
+            return `
+                <div class="stat-row-item">
+                    <div class="stat-row-label">
+                        <span>${d.icon} D${i+1} (${d.archetype.toUpperCase()})</span>
+                        <span style="color:#34d399">+${val} HP</span>
+                    </div>
+                    <div class="stat-bar-bg">
+                        <div class="stat-bar-fill" style="width:${pct}%;background:#34d399;"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const cardHealVal = data.cards || 0;
+        const cardPct = Math.round((cardHealVal / maxVal) * 100);
+        const cardRow = `
+            <div class="stat-row-item">
+                <div class="stat-row-label">
+                    <span>🩹 Heal Cards</span>
+                    <span style="color:#34d399">+${cardHealVal} HP</span>
+                </div>
+                <div class="stat-bar-bg">
+                    <div class="stat-bar-fill" style="width:${cardPct}%;background:#10b981;"></div>
+                </div>
+            </div>
+        `;
+
+        area.innerHTML = `
+            <div class="stat-bar-group">
+                ${rowsHTML}
+                ${cardRow}
+            </div>
+            <div class="stat-total-summary">Total HP Restored: <strong style="color:#34d399">+${data.total || 0}</strong></div>
+        `;
+    }
+}
+
+function openGameSettingsModal() {
+    let selectedHp = gameSettings.startHp || 50;
+    let selectedDiff = gameSettings.difficulty || 'medium';
+
+    window._selectSettingHp = function(hp) {
+        selectedHp = hp;
+        document.querySelectorAll('.hp-opt-btn').forEach(b => {
+            if (parseInt(b.dataset.hp) === hp) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+    };
+
+    window._selectSettingDiff = function(diff) {
+        selectedDiff = diff;
+        document.querySelectorAll('.diff-opt-btn').forEach(b => {
+            if (b.dataset.diff === diff) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+    };
+
+    window._confirmSettingsAndStart = function() {
+        gameSettings.startHp = selectedHp;
+        gameSettings.difficulty = selectedDiff;
+        hideOverlay();
+        startGame();
+    };
+
+    showOverlay(`
+        <div class="overlay-box settings-modal-box">
+            <h2>⚙️ MATCH SETUP & SETTINGS</h2>
+            <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:12px;">Sesuaikan konfigurasi HP awal dan tingkat kecerdasan AI sebelum bertanding:</p>
+            
+            <div class="settings-section-title">❤️ Starting Dice HP</div>
+            <div class="settings-options-grid">
+                <div class="settings-opt-btn hp-opt-btn ${selectedHp === 50 ? 'active' : ''}" data-hp="50" onclick="_selectSettingHp(50)">
+                    <div class="settings-opt-name">50 HP</div>
+                    <div class="settings-opt-desc">Standard Match</div>
+                </div>
+                <div class="settings-opt-btn hp-opt-btn ${selectedHp === 75 ? 'active' : ''}" data-hp="75" onclick="_selectSettingHp(75)">
+                    <div class="settings-opt-name">75 HP</div>
+                    <div class="settings-opt-desc">Extended Battle</div>
+                </div>
+                <div class="settings-opt-btn hp-opt-btn ${selectedHp === 100 ? 'active' : ''}" data-hp="100" onclick="_selectSettingHp(100)">
+                    <div class="settings-opt-name">100 HP</div>
+                    <div class="settings-opt-desc">Endurance Mode</div>
+                </div>
+            </div>
+
+            <div class="settings-section-title">🧠 AI Difficulty Mode</div>
+            <div class="settings-options-grid">
+                <div class="settings-opt-btn diff-opt-btn ${selectedDiff === 'easy' ? 'active' : ''}" data-diff="easy" onclick="_selectSettingDiff('easy')">
+                    <div class="settings-opt-name">🟢 Easy</div>
+                    <div class="settings-opt-desc">Standard Bot AI</div>
+                </div>
+                <div class="settings-opt-btn diff-opt-btn ${selectedDiff === 'medium' ? 'active' : ''}" data-diff="medium" onclick="_selectSettingDiff('medium')">
+                    <div class="settings-opt-name">🟡 Medium</div>
+                    <div class="settings-opt-desc">Simulates Moves</div>
+                </div>
+                <div class="settings-opt-btn diff-opt-btn ${selectedDiff === 'hard' ? 'active' : ''}" data-diff="hard" onclick="_selectSettingDiff('hard')">
+                    <div class="settings-opt-name">🔴 Hard</div>
+                    <div class="settings-opt-desc">Smart + Loaded Dice (4-6)</div>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+                <button class="overlay-btn" style="background:rgba(255,255,255,0.08);margin:0;" onclick="hideOverlay()">Kembali</button>
+                <button class="overlay-btn restart" style="margin:0;" onclick="_confirmSettingsAndStart()">⚔️ Start Battle</button>
+            </div>
         </div>
     `);
 }
