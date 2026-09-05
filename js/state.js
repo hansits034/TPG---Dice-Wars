@@ -37,6 +37,8 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false, isClone
         bleedMoveDistance: 0,
         antiHealTurns: 0,
         totalDamageTaken: 0,
+        totalDamageDealt: 0,
+        totalHealDone: 0,
         bonusDamageFromDamageTaken: 0,
         revived: false,
         undeadTriggered: false,

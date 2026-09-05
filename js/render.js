@@ -270,7 +270,8 @@ function render() {
 
         if (game.bearTraps && game.bearTraps.has(key)) {
             const trap = game.bearTraps.get(key);
-            if (trap && (trap.team === 'player' || game.currentTurn === 'player')) {
+            // Bear traps are hidden from opponents; only render player's own traps
+            if (trap && trap.team === 'player') {
                 fill = 'rgba(168,162,158,0.2)'; stroke = 'rgba(214,211,209,0.5)'; lw = 1.5;
             }
         }
@@ -302,9 +303,8 @@ function render() {
         if (game.pivotPreview && game.pivotPiercer) {
             const pDie = game.pivotPiercer;
             const pLvl = getSkillLevel(pDie, 'pivot') || 1;
-            const pivotSides = pLvl === 1 ? 2 : pLvl === 2 ? 3 : 6;
-            const neighbors = hexNeighbors(pDie.q, pDie.r).slice(0, pivotSides);
-            if (neighbors.some(n => n.q === h.q && n.r === h.r)) {
+            const pivotHexes = typeof getPivotHexes === 'function' ? getPivotHexes(pDie.q, pDie.r, pLvl) : [];
+            if (pivotHexes.some(n => n.q === h.q && n.r === h.r)) {
                 isPivotTile = true;
                 const pulse = Math.sin(now / 150) * 0.2 + 0.8;
                 fill = `rgba(245, 158, 11, ${0.35 * pulse})`;
@@ -340,12 +340,26 @@ function render() {
             ctx.font = `${HEX_SIZE * 0.5}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🌿', sx, sy);
         } else if (game.bearTraps && game.bearTraps.has(key)) {
             const trap = game.bearTraps.get(key);
-            if (trap && (trap.team === 'player' || game.currentTurn === 'player')) {
+            // Only draw trap icon for player's own bear trap
+            if (trap && trap.team === 'player') {
                 ctx.font = `${HEX_SIZE * 0.45}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🪤', sx, sy);
             }
         } else if (game.eventTiles && game.eventTiles.has(key)) {
             ctx.font = `${HEX_SIZE * 0.45}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sx, sy);
         }
+    }
+
+    // Psychic Push active aura effect overlay
+    if (game.psychicAura) {
+        ctx.save();
+        const pulse = Math.sin(now / 200) * 0.15 + 0.85;
+        const grad = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, canvas.height * 0.3, canvas.width / 2, canvas.height / 2, canvas.height * 0.85);
+        grad.addColorStop(0, 'rgba(192, 132, 252, 0)');
+        grad.addColorStop(1, `rgba(168, 85, 247, ${0.35 * pulse})`);
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+    }
     }
 
     if (game.bees) {

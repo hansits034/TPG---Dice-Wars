@@ -175,8 +175,9 @@ function updateSkillButtons() {
         }
     }
 
-    // 3. Piercer Pivot (3 Wave CD + 2-Click Preview)
+    // 3. Piercer Pivot (3 Wave CD + 2-Click Preview + Cancel Button)
     const pivotBtn = document.getElementById('btn-pivot');
+    const cancelPivotBtn = document.getElementById('btn-cancel-pivot');
     if (pivotBtn) {
         const playerPiercer = aliveDice('player').find(d => (d.archetype === 'piercer' && getSkillLevel(d, 'pivot') > 0));
         if (playerPiercer) {
@@ -187,25 +188,36 @@ function updateSkillButtons() {
                 pivotBtn.textContent = '🎯 CONFIRM PIVOT (8 DMG)';
                 pivotBtn.disabled = false;
                 pivotBtn.style.boxShadow = '0 0 25px rgba(245, 158, 11, 0.9)';
+                if (cancelPivotBtn) cancelPivotBtn.style.display = 'inline-flex';
             } else {
                 pivotBtn.textContent = isPivotReady ? '🎯 Pivot (8 DMG)' : `🎯 Pivot (W${(game.pivotUsedWave || 0) + 3})`;
                 pivotBtn.disabled = !isPlayerTurn || !isPivotReady || used || playerPiercer.frozen > 0 || playerPiercer.trapped > 0;
                 pivotBtn.style.boxShadow = '';
+                if (cancelPivotBtn) cancelPivotBtn.style.display = 'none';
             }
         } else {
             pivotBtn.style.display = 'none';
+            if (cancelPivotBtn) cancelPivotBtn.style.display = 'none';
         }
     }
 
-    // 4. Telekinator Mind Control (5 Wave CD + Unlock Check)
+    // 4. Telekinator Mind Control (5 Wave CD + Unlock Check + Disabled if 1 enemy remains)
     const mindBtn = document.getElementById('btn-mind-control');
     if (mindBtn) {
         const playerTele = aliveDice('player').find(d => (d.archetype === 'telekinator' && getSkillLevel(d, 'mindControl') > 0));
         if (playerTele) {
             mindBtn.style.display = 'inline-flex';
             const isMindReady = (game.wave - (game.mindControlUsedWave || -99)) >= 5;
-            mindBtn.disabled = !isPlayerTurn || !isMindReady || playerTele.frozen > 0 || playerTele.trapped > 0;
-            mindBtn.textContent = isMindReady ? '🔮 MIND CONTROL' : `🔮 Mind Ctrl (W${(game.mindControlUsedWave || 0) + 5})`;
+            const enemyCount = aliveDice('cpu').length;
+            if (enemyCount <= 1) {
+                mindBtn.disabled = true;
+                mindBtn.textContent = '🔮 Mind Ctrl (Need >1 Enemy)';
+                mindBtn.title = 'Mind Control disabled when only 1 enemy die remains';
+            } else {
+                mindBtn.disabled = !isPlayerTurn || !isMindReady || playerTele.frozen > 0 || playerTele.trapped > 0;
+                mindBtn.textContent = isMindReady ? '🔮 MIND CONTROL' : `🔮 Mind Ctrl (W${(game.mindControlUsedWave || 0) + 5})`;
+                mindBtn.title = 'Telekinator: Mind Control 1 enemy die every 5 waves';
+            }
         } else {
             mindBtn.style.display = 'none';
         }
@@ -248,8 +260,8 @@ function updateCardHand() {
             return `<div class="card-slot ${card.rarity}${activeCls}" onclick="onCardClick(${i})" id="card-slot-${i}">
                 <span class="card-icon">${card.icon}</span>
                 <span class="card-name">${card.name}</span>
-                <span class="card-discard-x" onclick="event.stopPropagation(); destroyCard(${i});" title="Destroy/discard this card">✕</span>
-                <div class="card-tooltip"><strong>${card.name}</strong><br>${card.desc}<br><em style="color:var(--${card.rarity})">${card.rarity.toUpperCase()}</em><br><span style="color:#f87171;font-size:0.65rem;">Click ✕ to destroy</span></div>
+                <span class="card-discard-x" onclick="event.stopPropagation(); cancelCard();" title="Cancel card selection">✕</span>
+                <div class="card-tooltip"><strong>${card.name}</strong><br>${card.desc}<br><em style="color:var(--${card.rarity})">${card.rarity.toUpperCase()}</em><br><span style="color:#94a3b8;font-size:0.65rem;">Click ✕ to cancel</span></div>
             </div>`;
         }).join('');
     }

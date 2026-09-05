@@ -19,7 +19,7 @@ const ARCHETYPES = [
         id: 'dracula', name: 'Dracula', icon: '🩸',
         skills: [
             { id: 'healOnAtk', name: 'Lifesteal', desc: 'Heal +2 HP per attack (+3 at Lvl 2, +5 at Lvl 3)', maxLvl: 3, curLvl: 1 },
-            { id: 'bleed', name: 'Bleed', desc: 'Attacks add 1 stack (2 at Lvl 2, 3 at Lvl 3, Max 3). Enemy takes 1 damage per 1 tile moved for 3 enemy turns & CANNOT be healed for 3 turns', maxLvl: 3, curLvl: 0 }
+            { id: 'bleed', name: 'Bleed', desc: 'Attacks inflict Bleed (1/2/3 stacks = 1/2/3 DMG per tile moved for 3 enemy turns, anti-heal 3 turns). Re-hitting refreshes 3-turn duration without adding extra stacks', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
@@ -50,7 +50,7 @@ const ARCHETYPES = [
         skills: [
             { id: 'psychic', name: 'Psychic Push', desc: 'Psychic ability (40% chance at Lvl 1, 65% at Lvl 2, 90% at Lvl 3) to push 1 enemy die to chosen empty tile at start of turn', maxLvl: 3, curLvl: 1 },
             { id: 'hypno', name: 'Hypno Steal', desc: 'Every 3 waves, 40% chance (70% at Lvl 2) to steal/destroy enemy card', maxLvl: 2, curLvl: 0 },
-            { id: 'mindControl', name: 'Mind Control', desc: 'Active skill (5 wave CD): Control 1 enemy die to fight for your team for 2 waves! Reverts with -6 HP recoil and no buffs', maxLvl: 1, curLvl: 0 }
+            { id: 'mindControl', name: 'Mind Control', desc: 'Active skill (5 wave CD, disabled if 1 enemy remains): Control 1 enemy die to fight for your team for 2 waves! Reverts with -6 HP recoil', maxLvl: 1, curLvl: 0 }
         ]
     },
     {
@@ -94,7 +94,7 @@ const ARCHETYPES = [
         id: 'piercer', name: 'Piercer', icon: '🎯',
         skills: [
             { id: 'tankKiller', name: 'Tank Killer', desc: 'Attacks deal extra +10% (+15% at Lvl 2, +20% at Lvl 3, +25% at Lvl 4) of target enemy HP', maxLvl: 4, curLvl: 1 },
-            { id: 'pivot', name: 'Pivot Strike', desc: 'Active skill (3 wave CD): Preview & deal 8 area damage around this die (2 sides at Lvl 1, 3 sides at Lvl 2, all sides at Lvl 3)', maxLvl: 3, curLvl: 0 }
+            { id: 'pivot', name: 'Pivot Strike', desc: 'Active skill (3 wave CD): Preview & deal 8 area damage around this die (1 hex radius / 6 tiles at Lvl 1, 2 hex radius / 18 tiles at Lvl 2)', maxLvl: 2, curLvl: 0 }
         ]
     },
     {

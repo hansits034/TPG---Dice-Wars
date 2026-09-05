@@ -31,7 +31,7 @@ async function playerAutoUseCards() {
         const card = hand[i];
 
         if (card.id === 'heal') {
-            const weak = alive.find(d => d.hp <= MAX_HP * 0.4);
+            const weak = alive.find(d => d.hp <= (d.maxHp || 50) * 0.4);
             if (weak) {
                 applyCardWithTarget(card, 'player', i, [weak]);
                 await delay(300);
@@ -60,7 +60,7 @@ async function playerAutoUseCards() {
             }
         }
         if (card.id === 'conceal') {
-            const lowHp = alive.find(d => d.hp <= MAX_HP * 0.3 && d.concealed === 0);
+            const lowHp = alive.find(d => d.hp <= (d.maxHp || 50) * 0.3 && d.concealed === 0);
             if (lowHp) {
                 applyCardWithTarget(card, 'player', i, [lowHp]);
                 await delay(300);
@@ -76,7 +76,7 @@ async function playerAutoUseCards() {
             }
         }
         if (card.id === 'cure') {
-            const debuffed = alive.find(d => d.frozen > 0 || d.trapped > 0 || d.bleedStacks > 0 || d.hp <= MAX_HP * 0.7);
+            const debuffed = alive.find(d => d.frozen > 0 || d.trapped > 0 || d.bleedStacks > 0 || d.hp <= (d.maxHp || 50) * 0.7);
             if (debuffed) {
                 applyCardWithTarget(card, 'player', i, [debuffed]);
                 await delay(300);
@@ -169,7 +169,7 @@ async function cpuUseCards() {
         const card = hand[i];
 
         if (card.id === 'heal') {
-            const weak = alive.find(d => d.hp <= MAX_HP * 0.4);
+            const weak = alive.find(d => d.hp <= (d.maxHp || 50) * 0.4);
             if (weak) {
                 applyCardWithTarget(card, 'cpu', i, [weak]);
                 await delay(500);
@@ -198,7 +198,7 @@ async function cpuUseCards() {
             }
         }
         if (card.id === 'conceal') {
-            const lowHp = alive.find(d => d.hp <= MAX_HP * 0.3 && d.concealed === 0);
+            const lowHp = alive.find(d => d.hp <= (d.maxHp || 50) * 0.3 && d.concealed === 0);
             if (lowHp) {
                 applyCardWithTarget(card, 'cpu', i, [lowHp]);
                 await delay(500);
@@ -214,7 +214,7 @@ async function cpuUseCards() {
             }
         }
         if (card.id === 'cure') {
-            const debuffed = alive.find(d => d.frozen > 0 || d.trapped > 0 || d.bleedStacks > 0 || d.hp <= MAX_HP * 0.7);
+            const debuffed = alive.find(d => d.frozen > 0 || d.trapped > 0 || d.bleedStacks > 0 || d.hp <= (d.maxHp || 50) * 0.7);
             if (debuffed) {
                 applyCardWithTarget(card, 'cpu', i, [debuffed]);
                 await delay(500);
@@ -339,11 +339,11 @@ async function beginCpuTurn() {
         }
     }
 
-    // CPU Telekinator Mind Control (every 5 waves if unlocked)
+    // CPU Telekinator Mind Control (every 5 waves if unlocked and >1 player die remains)
     const cpuTele = alive.find(d => (d.archetype === 'telekinator' && getSkillLevel(d, 'mindControl') > 0) && d.frozen === 0);
     if (cpuTele && (game.wave - (game.mindControlUsedWave || -99)) >= 5) {
         const pAlive = aliveDice('player').filter(pd => !pd.concealed);
-        if (pAlive.length > 0) {
+        if (pAlive.length > 1) {
             const victim = pAlive[Math.floor(Math.random() * pAlive.length)];
             victim.isMindControlled = true;
             victim.mindControlledWaves = 2;
@@ -366,7 +366,9 @@ async function beginCpuTurn() {
     // CPU Piercer Pivot Strike (every 3 waves if in range)
     const cpuPiercer = alive.find(d => (d.archetype === 'piercer' && getSkillLevel(d, 'pivot') > 0) && !d.hasAttackedThisTurn && d.frozen === 0);
     if (cpuPiercer && (game.wave - (game.pivotUsedWave || -99)) >= 3) {
-        const pAlive = aliveDice('player').filter(pd => !pd.concealed && hexDist(cpuPiercer.q, cpuPiercer.r, pd.q, pd.r) === 1);
+        const pLvl = getSkillLevel(cpuPiercer, 'pivot') || 1;
+        const hitHexes = typeof getPivotHexes === 'function' ? getPivotHexes(cpuPiercer.q, cpuPiercer.r, pLvl) : [];
+        const pAlive = aliveDice('player').filter(pd => !pd.concealed && hitHexes.some(n => n.q === pd.q && n.r === pd.r));
         if (pAlive.length > 0) {
             await executePiercerPivot(cpuPiercer);
             await delay(500);
@@ -459,7 +461,8 @@ async function beginCpuTurn() {
             const damage = enemyDie.halfDamage > 0 ? Math.ceil(rawDamage / 2) : rawDamage;
 
             enemyDie.hp -= damage;
-            enemyDie.totalDamageTaken += damage;
+            enemyDie.totalDamageTaken = (enemyDie.totalDamageTaken || 0) + damage;
+            die.totalDamageDealt = (die.totalDamageDealt || 0) + damage;
             enemyDie.damagedThisWave = true;
             SFX.attack();
 
@@ -498,23 +501,39 @@ async function beginCpuTurn() {
                 addFloatingText(`-${reflectDmg} 🛡️ Thorns`, die.q, die.r, '#a8a29e', 18);
             }
 
-            // Dracula Lifesteal
+            // Dracula Lifesteal (clamps to die.maxHp, NOT hardcoded 50)
             const healLvl = getSkillLevel(die, 'healOnAtk');
             if (healLvl > 0 && die.antiHealTurns === 0) {
                 const healAmt = healLvl === 1 ? 2 : healLvl === 2 ? 3 : 5;
-                die.hp = Math.min(MAX_HP, die.hp + healAmt);
+                const maxHp = die.maxHp || (game && game.settings ? game.settings.startHp : (typeof gameSettings !== 'undefined' ? gameSettings.startHp : 50));
+                const prevHp = die.hp;
+                die.hp = Math.min(maxHp, die.hp + healAmt);
+                const actualHeal = die.hp - prevHp;
+                die.totalHealDone = (die.totalHealDone || 0) + actualHeal;
                 addFloatingText(`+${healAmt} 🩸`, die.q, die.r, '#34d399', 16);
             }
 
-            // Dracula Bleed
+            // Dracula Bleed: If already bleeding, upgrade stack if current skill is higher and refresh 3-turn duration
             const bleedLvl = getSkillLevel(die, 'bleed');
             if (bleedLvl > 0) {
                 const stacksToAdd = bleedLvl === 1 ? 1 : bleedLvl === 2 ? 2 : 3;
-                enemyDie.bleedStacks = Math.min(3, (enemyDie.bleedStacks || 0) + stacksToAdd);
-                enemyDie.bleedTurns = 3;
-                enemyDie.antiHealTurns = 3;
-                addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks} (3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
-                addCombatLog(`${die.icon} ${die.id.toUpperCase()} inflicted Bleed x${enemyDie.bleedStacks} on ${enemyDie.icon} ${enemyDie.id.toUpperCase()} (3 turns)!`, '🩸', '#ef4444');
+                if (enemyDie.bleedTurns > 0 || enemyDie.bleedStacks > 0) {
+                    enemyDie.bleedStacks = Math.min(3, Math.max(enemyDie.bleedStacks || 1, stacksToAdd));
+                    enemyDie.bleedSourceDieId = die.id;
+                    enemyDie.bleedSourceTeam = die.team;
+                    enemyDie.bleedTurns = 3;
+                    enemyDie.antiHealTurns = 3;
+                    addFloatingText(`🩸 Bleed Refreshed (${enemyDie.bleedStacks} stacks, 3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
+                    addCombatLog(`🔴 CPU ${die.icon} refreshed Bleed duration (3 turns, ${enemyDie.bleedStacks} stacks) on ${enemyDie.icon} ${enemyDie.id.toUpperCase()}!`, '🩸', '#ef4444');
+                } else {
+                    enemyDie.bleedStacks = Math.min(3, stacksToAdd);
+                    enemyDie.bleedSourceDieId = die.id;
+                    enemyDie.bleedSourceTeam = die.team;
+                    enemyDie.bleedTurns = 3;
+                    enemyDie.antiHealTurns = 3;
+                    addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks} (3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
+                    addCombatLog(`🔴 CPU ${die.icon} inflicted Bleed x${enemyDie.bleedStacks} on ${enemyDie.icon} ${enemyDie.id.toUpperCase()} (3 turns)!`, '🩸', '#ef4444');
+                }
             }
 
             addFloatingText(`-${damage}`, targetHex.q, targetHex.r, '#ff4466', 22);

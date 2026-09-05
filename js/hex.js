@@ -40,6 +40,14 @@ function hexNeighbors(q, r) {
     return getNeighbors(q, r);
 }
 
+function getPivotHexes(cq, cr, lvl=1) {
+    const maxDist = lvl >= 2 ? 2 : 1;
+    return allHexes.filter(h => {
+        const d = hexDist(cq, cr, h.q, h.r);
+        return d >= 1 && d <= maxDist;
+    });
+}
+
 function isValidHex(q, r) {
     return Math.abs(q) <= GRID_RADIUS && Math.abs(r) <= GRID_RADIUS && Math.abs(q + r) <= GRID_RADIUS;
 }
