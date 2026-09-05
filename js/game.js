@@ -346,6 +346,9 @@ async function tickWaveEffects() {
     if (game.playerDice) game.playerDice = game.playerDice.filter(d => !d.isCloneDie);
     if (game.cpuDice) game.cpuDice = game.cpuDice.filter(d => !d.isCloneDie);
 
+    // Immediately release Mind Control if only 1 unit remains on the original team
+    checkAndReleaseSoloMindControl();
+
     // Mind Control expiry tracking (claims last 2 waves)
     const currentAllDice = allDice();
     for (const d of currentAllDice) {
@@ -1472,7 +1475,60 @@ function renderGameOverStatsHTML(isWin) {
     `;
 }
 
+function checkAndReleaseSoloMindControl() {
+    if (!game || !game.playerDice || !game.cpuDice) return false;
+    let anyReleased = false;
+    const all = allDice();
+
+    for (const d of all) {
+        if (d.isMindControlled && d.hp > 0) {
+            const origTeam = d.originalTeam || (d.team === 'player' ? 'cpu' : 'player');
+            // Check if there are any other living dice belonging to origTeam (excluding this mind-controlled unit)
+            const otherAliveUnitsOfOrigTeam = all.filter(x => x.id !== d.id && x.hp > 0 && (x.originalTeam ? x.originalTeam === origTeam : x.team === origTeam));
+
+            if (otherAliveUnitsOfOrigTeam.length === 0) {
+                // The mind-controlled die is the ONLY remaining unit of its original team!
+                // Immediately release mind control so the match does not falsely end prematurely.
+                d.isMindControlled = false;
+                d.mindControlledWaves = 0;
+
+                if (origTeam === 'cpu') {
+                    game.playerDice = game.playerDice.filter(x => x.id !== d.id);
+                    d.team = 'cpu';
+                    if (!game.cpuDice.some(x => x.id === d.id)) game.cpuDice.push(d);
+                } else {
+                    game.cpuDice = game.cpuDice.filter(x => x.id !== d.id);
+                    d.team = 'player';
+                    if (!game.playerDice.some(x => x.id === d.id)) game.playerDice.push(d);
+                }
+
+                if (game.selectedDie && game.selectedDie.id === d.id && d.team !== game.currentTurn) {
+                    game.selectedDie = null;
+                    game.reachable = null;
+                    game.parents = null;
+                }
+
+                // Restore pre-control HP clamp and apply 6 flat recoil damage
+                if (d.hp > (d.preControlHp || d.hp)) d.hp = d.preControlHp;
+                applyIndirectDamage(d, 6, '🔮 Solo Release Recoil', '#c084fc');
+                addFloatingText('🔮 Mind Control Released (Last Standing)!', d.q, d.r, '#c084fc', 20);
+                addCombatLog(`🔮 Mind Control broken on ${d.icon} ${d.id.toUpperCase()}! As the last surviving unit, it returned to ${origTeam.toUpperCase()} and took 6 recoil DMG.`, '🔮', '#c084fc');
+                anyReleased = true;
+            }
+        }
+    }
+
+    if (anyReleased) {
+        updateDiceHP();
+        updateSkillButtons();
+        updateMoves();
+    }
+    return anyReleased;
+}
+
 function checkWin() {
+    checkAndReleaseSoloMindControl();
+
     const pAlive = aliveDice('player').length;
     const cAlive = aliveDice('cpu').length;
 
