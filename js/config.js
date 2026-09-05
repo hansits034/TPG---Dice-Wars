@@ -41,7 +41,7 @@ const ARCHETYPES = [
         id: 'samurai', name: 'Samurai', icon: '🗡️',
         skills: [
             { id: 'dashMastery', name: 'Dash Mastery', desc: '+1 Card Slot (Max 4). Free Dash card every 10 waves & +15% Dash drop chance on event tiles', maxLvl: 1, curLvl: 1 },
-            { id: 'concealMastery', name: 'Immunity Master', desc: 'Immunity effect on this die lasts +1 extra wave (+2 extra waves at Lvl 2)', maxLvl: 2, curLvl: 0 },
+            { id: 'concealMastery', name: 'Immunity Master', desc: 'Immunity effect on this die lasts +1 extra wave (+2 extra waves at Lvl 2)', maxLvl: 2, curLvl: 1 },
             { id: 'superDash', name: 'Super Dash', desc: 'Increases Dash card damage by +5 per level', maxLvl: 4, curLvl: 0 }
         ]
     },
@@ -57,7 +57,7 @@ const ARCHETYPES = [
         id: 'defender', name: 'Defender', icon: '🛡️',
         skills: [
             { id: 'defenderMastery', name: 'Defender Mastery', desc: '+1 Card Slot (Max 4). Free Immunity card every 10 waves & +15% Immunity drop chance on event tiles', maxLvl: 1, curLvl: 1 },
-            { id: 'thorns', name: 'Thorns', desc: 'When attacked, reflect 1 damage (3 at Lvl 2, 5 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 0 },
+            { id: 'thorns', name: 'Thorns', desc: 'When attacked, reflect 1 damage (3 at Lvl 2, 5 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 1 },
             { id: 'toughness', name: 'Toughness', desc: 'Reduce all incoming damage by -3 (-5 at Lvl 2, -7 at Lvl 3)', maxLvl: 3, curLvl: 0 }
         ]
     },
@@ -72,7 +72,7 @@ const ARCHETYPES = [
         id: 'necromancer', name: 'Necromancer', icon: '💀',
         skills: [
             { id: 'minions', name: 'Minions', desc: 'Every 2 waves, summon 1 (2 at Lvl 2, 3 at Lvl 3) zombie lasting 2-3 waves. Zombies move 3 tiles/turn & deal 2 damage', maxLvl: 3, curLvl: 1 },
-            { id: 'undead', name: 'Undead', desc: 'On death: splits into 2 playable dice (rolls 1-3) with 5 HP (10 at Lvl 2, 20 at Lvl 3) & empowers zombies with +2 (+3/+4) damage', maxLvl: 3, curLvl: 0 }
+            { id: 'undead', name: 'Undead', desc: 'On death: splits into 2 playable dice (rolls 1-3) with 10 HP (20 at Lvl 2, 30 at Lvl 3) & empowers zombies with +1 (+2/+4) damage', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
@@ -86,7 +86,7 @@ const ARCHETYPES = [
         id: 'doctor', name: 'Doctor', icon: '🩺',
         skills: [
             { id: 'doctorMastery', name: 'Medical Mastery', desc: '+1 Card Slot (Max 4). Heal Pill card restores +5 additional HP (Total +12 HP)', maxLvl: 1, curLvl: 1 },
-            { id: 'nobleSaviour', name: 'Noble Saviour', desc: 'Gain 1 free Heal Pill card every 4 waves (every 3 waves at Lvl 2)', maxLvl: 2, curLvl: 0 },
+            { id: 'nobleSaviour', name: 'Noble Saviour', desc: 'Gain 1 free Heal Pill card every 4 waves (every 3 waves at Lvl 2)', maxLvl: 2, curLvl: 1 },
             { id: 'mutantResearch', name: 'Mutant Research', desc: 'Permanently adds +1 (+2 at Lvl 2, +3 at Lvl 3, +4 at Lvl 4) to all rolled dice values for the whole team', maxLvl: 4, curLvl: 0 }
         ]
     },

@@ -323,6 +323,9 @@ function tickStatusEffects(team) {
                     }
                 }
             });
+            if (totalHealedThisTurn > 0) {
+                d.totalHealDone = (d.totalHealDone || 0) + totalHealedThisTurn;
+            }
             if (team === 'player' && game.stats && totalHealedThisTurn > 0) {
                 game.stats.healDone[d.id] = (game.stats.healDone[d.id] || 0) + totalHealedThisTurn;
                 game.stats.healDone.total += totalHealedThisTurn;
@@ -432,10 +435,10 @@ async function tickWaveEffects() {
             if (minionLvl > 0 && d.frozen === 0) {
                 const count = minionLvl; // 1/2/3
                 let undeadBoost = 0;
-                // Check if undead empowered
+                // Check if undead empowered (Lvl 1: +1, Lvl 2: +2, Lvl 3: +4)
                 const undeadLvl = getSkillLevel(d, 'undead');
-                if (d.isSplit && undeadLvl > 0) {
-                    undeadBoost = undeadLvl === 1 ? 2 : undeadLvl === 2 ? 3 : 4;
+                if (undeadLvl > 0) {
+                    undeadBoost = undeadLvl === 1 ? 1 : undeadLvl === 2 ? 2 : 4;
                 }
                 const baseZombieDmg = 2 + undeadBoost;
 
@@ -645,6 +648,11 @@ async function executeArcherLongShot(archerDie, targetEnemy) {
 
     archerDie.hasAttackedThisTurn = true;
     archerDie.moveAllowance = 0; // Turn ends for archer after long shot
+    if (game.selectedDie === archerDie) {
+        game.selectedDie = null;
+        game.reachable = null;
+        game.parents = null;
+    }
     SFX.dash();
 
     if (Math.random() < missRate) {
@@ -680,6 +688,9 @@ function triggerPlayerArcherShot() {
     const archer = aliveDice('player').find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0) && !d.hasAttackedThisTurn);
     if (!archer) return;
 
+    game.selectedDie = null;
+    game.reachable = null;
+    game.parents = null;
     game.archerSource = archer;
     game.phase = 'PLAYER_ARCHER_TARGET';
     setMessage('🏹 Long Shot: Click an enemy die to fire from distance.');
@@ -757,8 +768,15 @@ async function executePiercerPivot(piercerDie) {
                     for (const teamDie of game.cpuDice) {
                         const revLvl = getSkillLevel(teamDie, 'revive');
                         if (revLvl > 0 && !target.revived) {
-                            target.hp = revLvl * 15;
+                            const healAmount = revLvl * 15;
+                            target.hp = healAmount;
                             target.revived = true;
+                            teamDie.totalHealDone = (teamDie.totalHealDone || 0) + healAmount;
+                            if (teamDie.team === 'player' && game.stats) {
+                                game.stats.healDone[teamDie.id] = (game.stats.healDone[teamDie.id] || 0) + healAmount;
+                                game.stats.healDone.total += healAmount;
+                                updateStatsDisplay();
+                            }
                             const emptyHex = findNearestEmptyHex(target.q, target.r);
                             target.q = emptyHex.q; target.r = emptyHex.r;
                             target.movedThisWave = true;
@@ -957,7 +975,7 @@ function handleUndeadSplit(deadDie) {
     const undeadLvl = getSkillLevel(deadDie, 'undead');
     if (undeadLvl > 0 && !deadDie.undeadTriggered) {
         deadDie.undeadTriggered = true;
-        const splitHp = undeadLvl === 1 ? 5 : undeadLvl === 2 ? 10 : 20;
+        const splitHp = undeadLvl === 1 ? 10 : undeadLvl === 2 ? 20 : 30;
 
         // Create 2 split dice
         const teamDiceArray = deadDie.team === 'player' ? game.playerDice : game.cpuDice;
@@ -968,7 +986,9 @@ function handleUndeadSplit(deadDie) {
         const subDie2 = createDie(`${deadDie.id}_b`, empty2.q, empty2.r, deadDie.team, 'necromancer', true);
 
         subDie1.hp = splitHp;
+        subDie1.maxHp = splitHp;
         subDie2.hp = splitHp;
+        subDie2.maxHp = splitHp;
         subDie1.skills = JSON.parse(JSON.stringify(deadDie.skills));
         subDie2.skills = JSON.parse(JSON.stringify(deadDie.skills));
         subDie1.undeadTriggered = true;
@@ -1175,8 +1195,15 @@ async function handlePlayerMove(tq, tr) {
                 for (const teamDie of game.cpuDice) {
                     const revLvl = getSkillLevel(teamDie, 'revive');
                     if (revLvl > 0 && !enemyDie.revived) {
-                        enemyDie.hp = revLvl * 15;
+                        const healAmount = revLvl * 15;
+                        enemyDie.hp = healAmount;
                         enemyDie.revived = true;
+                        teamDie.totalHealDone = (teamDie.totalHealDone || 0) + healAmount;
+                        if (teamDie.team === 'player' && game.stats) {
+                            game.stats.healDone[teamDie.id] = (game.stats.healDone[teamDie.id] || 0) + healAmount;
+                            game.stats.healDone.total += healAmount;
+                            updateStatsDisplay();
+                        }
                         const emptyHex = findNearestEmptyHex(enemyDie.q, enemyDie.r);
                         enemyDie.q = emptyHex.q;
                         enemyDie.r = emptyHex.r;
@@ -1191,6 +1218,10 @@ async function handlePlayerMove(tq, tr) {
             die.q = tq; die.r = tr;
             enemyDie.q = prevQ; enemyDie.r = prevR;
             enemyDie.movedThisWave = true;
+            if (typeof triggerTileEffectOnDie === 'function') {
+                triggerTileEffectOnDie(enemyDie);
+                triggerTileEffectOnDie(die);
+            }
         }
 
         die.damageMultiplier = 1;
@@ -1367,6 +1398,9 @@ function handleMindControlEnemySelect(q, r) {
 function handleArcherTargetSelect(q, r) {
     const enemy = getDieAt(q, r);
     if (enemy && enemy.team === 'cpu' && enemy.hp > 0 && !enemy.concealed && game.archerSource) {
+        game.selectedDie = null;
+        game.reachable = null;
+        game.parents = null;
         executeArcherLongShot(game.archerSource, enemy);
         game.archerSource = null;
         game.phase = 'PLAYER_TURN';

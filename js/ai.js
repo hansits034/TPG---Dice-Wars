@@ -578,8 +578,15 @@ async function beginCpuTurn() {
                     for (const teamDie of game.playerDice) {
                         const revLvl = getSkillLevel(teamDie, 'revive');
                         if (revLvl > 0 && !enemyDie.revived) {
-                            enemyDie.hp = revLvl * 15;
+                            const healAmount = revLvl * 15;
+                            enemyDie.hp = healAmount;
                             enemyDie.revived = true;
+                            teamDie.totalHealDone = (teamDie.totalHealDone || 0) + healAmount;
+                            if (teamDie.team === 'player' && game.stats) {
+                                game.stats.healDone[teamDie.id] = (game.stats.healDone[teamDie.id] || 0) + healAmount;
+                                game.stats.healDone.total += healAmount;
+                                updateStatsDisplay();
+                            }
                             const emptyHex = findNearestEmptyHex(enemyDie.q, enemyDie.r);
                             enemyDie.q = emptyHex.q;
                             enemyDie.r = emptyHex.r;
@@ -594,6 +601,10 @@ async function beginCpuTurn() {
                 die.q = targetHex.q; die.r = targetHex.r;
                 enemyDie.q = prevQ; enemyDie.r = prevR;
                 enemyDie.movedThisWave = true;
+                if (typeof triggerTileEffectOnDie === 'function') {
+                    triggerTileEffectOnDie(enemyDie);
+                    triggerTileEffectOnDie(die);
+                }
             }
 
             die.damageMultiplier = 1;

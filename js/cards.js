@@ -13,6 +13,11 @@ function onCardClick(idx) {
 
     const card = game.playerHand[idx];
 
+    // Clear any previous die movement selection
+    game.selectedDie = null;
+    game.reachable = null;
+    game.parents = null;
+
     if (game.activeCard) {
         game.activeCard = null;
         game.cardTargets = [];
@@ -161,10 +166,12 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const hex = targets[0];
             if (hex) {
                 game.bearTraps.set(hKey(hex.q, hex.r), { team: team, wavesLeft: 3 });
-                addFloatingText('🪤 Trap Set!', hex.q, hex.r, '#a8a29e', 18);
-                SFX.block();
-                const p = hexToPixel(hex.q, hex.r);
-                spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#a8a29e', 15, 2, 600, 3);
+                if (team === 'player') {
+                    addFloatingText('🪤 Trap Set!', hex.q, hex.r, '#a8a29e', 18);
+                    SFX.block();
+                    const p = hexToPixel(hex.q, hex.r);
+                    spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#a8a29e', 15, 2, 600, 3);
+                }
             }
             break;
         }
@@ -361,6 +368,9 @@ async function executeDash(die, dir, team, handIdx) {
     updateCardHand();
 
     if (team === 'player') {
+        game.selectedDie = null;
+        game.reachable = null;
+        game.parents = null;
         game.activeCard = null;
         game.phase = 'PLAYER_TURN';
         await delay(300);
