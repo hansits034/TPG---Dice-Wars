@@ -194,8 +194,9 @@ function drawStatusIcons(cx, cy, size, die) {
     if (die.frozen > 0) { ctx.fillText('❄️', cx - 8, iconY); }
     if (die.trapped > 0) { ctx.fillText('🌿', cx, iconY); }
     if (die.bleedStacks > 0) { ctx.fillText(`🩸${die.bleedStacks}`, cx + 12, iconY); }
+    if (die.aegisShield > 0) { ctx.fillText(`🛡️${die.aegisShield}`, cx - 12, iconY); }
     if (die.damageMultiplier > 1) { ctx.fillText(die.damageMultiplier === 3 ? '🔥' : '⚔️', cx + 8, iconY); }
-    if (die.cloneActive) { ctx.fillText('🪞', cx, iconY - 12); }
+    if (die.cloneActive || die.isCloneDie) { ctx.fillText('🪞', cx, iconY - 12); }
     if (die.halfDamage > 0) { ctx.fillText('🛡', cx + 8, iconY - 12); }
     if (die.attackAgainActive) { ctx.fillText('⚡', cx - 8, iconY - 12); }
 
@@ -241,6 +242,13 @@ function render() {
             fill = 'rgba(132,204,22,0.2)'; stroke = 'rgba(132,204,22,0.6)'; lw = 2;
         }
 
+        if (game.bearTraps && game.bearTraps.has(key)) {
+            const trap = game.bearTraps.get(key);
+            if (trap && (trap.team === 'player' || game.currentTurn === 'player')) {
+                fill = 'rgba(168,162,158,0.2)'; stroke = 'rgba(214,211,209,0.5)'; lw = 1.5;
+            }
+        }
+
         if (game.eventTiles && game.eventTiles.has(key)) {
             const pulse = Math.sin(now / 400 + h.q * 2 + h.r) * 0.15 + 0.85;
             fill = `rgba(251,191,36,${0.12 * pulse})`; stroke = `rgba(251,191,36,${0.5 * pulse})`; lw = 2;
@@ -283,6 +291,11 @@ function render() {
             ctx.font = `${HEX_SIZE * 0.5}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🔥', sx, sy);
         } else if (game.vineTraps && game.vineTraps.has(key)) {
             ctx.font = `${HEX_SIZE * 0.5}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🌿', sx, sy);
+        } else if (game.bearTraps && game.bearTraps.has(key)) {
+            const trap = game.bearTraps.get(key);
+            if (trap && (trap.team === 'player' || game.currentTurn === 'player')) {
+                ctx.font = `${HEX_SIZE * 0.45}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('🪤', sx, sy);
+            }
         } else if (game.eventTiles && game.eventTiles.has(key)) {
             ctx.font = `${HEX_SIZE * 0.45}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('✨', sx, sy);
         }

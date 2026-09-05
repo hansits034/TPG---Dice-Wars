@@ -31,9 +31,12 @@ function onCardClick(idx) {
         } else if (card.target === 'own-die-2') {
             game.phase = 'PLAYER_CARD_TARGET';
             setMessage(`🔀 Swap: Click 2 of your dice to swap positions (or click cancel to abort).`);
-        } else if (card.target === 'hex' || card.target === 'hex-4') {
+        } else if (card.target === 'hex-4') {
             game.phase = 'PLAYER_CARD_TARGET';
             setMessage(`🧱 Block: Click 4 empty hexes to place walls (or click cancel to abort).`);
+        } else if (card.target === 'hex') {
+            game.phase = 'PLAYER_CARD_TARGET';
+            setMessage(`${card.icon} ${card.name}: Click an empty hex to place trap (or click cancel to abort).`);
         } else if (card.target === 'own-die') {
             game.phase = 'PLAYER_CARD_TARGET';
             setMessage(`${card.icon} ${card.name}: Click one of your dice (or click cancel to abort).`);
@@ -114,6 +117,57 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             }
             break;
         }
+        case 'sprint': {
+            const die = targets[0];
+            die.moveAllowance = (die.moveAllowance || 0) + 3;
+            addFloatingText('👟 +3 Moves!', die.q, die.r, '#38bdf8', 18);
+            SFX.powerUp();
+            const p = hexToPixel(die.q, die.r);
+            spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#38bdf8', 15, 2, 600, 3);
+            break;
+        }
+        case 'cure': {
+            const die = targets[0];
+            die.frozen = 0;
+            die.trapped = 0;
+            die.bleedStacks = 0;
+            die.moveDebuff = 0;
+            die.antiHealTurns = 0;
+            const prevHp = die.hp;
+            const maxHp = die.maxHp || MAX_HP;
+            die.hp = Math.min(maxHp, die.hp + 5);
+            const actual = die.hp - prevHp;
+            if (team === 'player' && game.stats && actual > 0) {
+                game.stats.healDone.cards = (game.stats.healDone.cards || 0) + actual;
+                game.stats.healDone.total += actual;
+                updateStatsDisplay();
+            }
+            addFloatingText('🧪 Cured & +5 HP!', die.q, die.r, '#c084fc', 20);
+            SFX.heal();
+            const p = hexToPixel(die.q, die.r);
+            spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#c084fc', 20, 2, 800, 4);
+            break;
+        }
+        case 'aegis': {
+            const die = targets[0];
+            die.aegisShield = (die.aegisShield || 0) + 15;
+            addFloatingText(`🛡️ Aegis Shield +15!`, die.q, die.r, '#38bdf8', 20);
+            SFX.powerUp();
+            const p = hexToPixel(die.q, die.r);
+            spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#38bdf8', 20, 2, 900, 4);
+            break;
+        }
+        case 'bearTrap': {
+            const hex = targets[0];
+            if (hex) {
+                game.bearTraps.set(hKey(hex.q, hex.r), { team: team, wavesLeft: 3 });
+                addFloatingText('🪤 Trap Set!', hex.q, hex.r, '#a8a29e', 18);
+                SFX.block();
+                const p = hexToPixel(hex.q, hex.r);
+                spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#a8a29e', 15, 2, 600, 3);
+            }
+            break;
+        }
         case 'freeze': {
             const die = targets[0];
             die.frozen = 2;
@@ -136,13 +190,22 @@ function applyCardWithTarget(card, team, handIdx, targets) {
         }
         case 'clone': {
             const die = targets[0];
-            die.cloneActive = true;
-            die.moveAllowance += 2;
-            die.halfDamage = 1;
-            addFloatingText('🪞 Clone!', die.q, die.r, '#c084fc', 18);
+            const emptyHex = findNearestEmptyHex(die.q, die.r);
+            const teamDiceArray = team === 'player' ? game.playerDice : game.cpuDice;
+            const cloneId = `${die.id}_clone_${Math.floor(Math.random()*1000)}`;
+            const cloneDie = createDie(cloneId, emptyHex.q, emptyHex.r, team, die.archetype, die.isSplit, true);
+            cloneDie.hp = die.hp;
+            cloneDie.maxHp = die.maxHp;
+            cloneDie.baseDamage = die.baseDamage || 3;
+            cloneDie.moveAllowance = die.moveAllowance || 3;
+            cloneDie.cloneActive = true;
+            cloneDie.isCloneDie = true;
+            teamDiceArray.push(cloneDie);
+
+            addFloatingText('🪞 CLONE SUMMONED (1 Wave)!', emptyHex.q, emptyHex.r, '#c084fc', 20);
             SFX.powerUp();
-            const p = hexToPixel(die.q, die.r);
-            spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#c084fc', 20, 2, 800, 4);
+            const p = hexToPixel(emptyHex.q, emptyHex.r);
+            spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#c084fc', 24, 3, 1000, 4);
             break;
         }
         case 'swap': {
@@ -158,6 +221,10 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             spawnParticles(p2.x+gridCenterX, p2.y+gridCenterY, '#60a5fa', 12, 2, 600);
             
             // Check tile effects upon swapping
+            if (typeof checkEventTilePickup === 'function') {
+                checkEventTilePickup(d1);
+                checkEventTilePickup(d2);
+            }
             triggerTileEffectOnDie(d1);
             triggerTileEffectOnDie(d2);
             break;
@@ -318,7 +385,7 @@ function handleCardTarget(q, r) {
         }
         return true;
     } else if (card.target === 'hex' || card.target === 'hex-4') {
-        const reqCount = card.target === 'hex-4' ? 4 : 2;
+        const reqCount = card.target === 'hex-4' ? 4 : 1;
         if (isValidHex(q, r) && !getDieAt(q, r) && !isBlocked(q, r) && !game.eventTiles.has(hKey(q, r))) {
             if (!game.cardTargets.some(t => t.q === q && t.r === r)) {
                 game.cardTargets.push({ q, r });

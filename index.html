@@ -124,6 +124,9 @@
             <button class="btn-action btn-deselect" id="btn-deselect" disabled onclick="deselectDie()">↩ Deselect</button>
             <button class="btn-action btn-end" id="btn-end" disabled onclick="endTurn()">⏭ End Turn</button>
             <button class="btn-action btn-zap" id="btn-zap" onclick="triggerPlayerMageZap()" title="Trigger Mage Zap skill based on distance to nearest enemy">⚡ ZAP (0)</button>
+            <button class="btn-action btn-archer" id="btn-archer" style="display:none;" onclick="triggerPlayerArcherShot()" title="Archer Ranged Shot (Miss chance based on distance)">🏹 Long Shot</button>
+            <button class="btn-action btn-pivot" id="btn-pivot" style="display:none;" onclick="triggerPlayerPiercerPivot()" title="Piercer Pivot: Deal 8 area damage around die">🎯 Pivot (8 DMG)</button>
+            <button class="btn-action btn-mind-control" id="btn-mind-control" style="display:none;" onclick="triggerPlayerMindControl()" title="Telekinator: Mind Control 1 enemy die every 5 waves">🔮 Mind Control</button>
         </div>
 
         <!-- Card Hand -->

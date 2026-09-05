@@ -41,24 +41,17 @@ async function animateMove(die, path) {
             requestAnimationFrame(step);
         });
         SFX.move();
+        die.movedThisWave = true;
 
-        // Check Bleed Move Distance (1 dmg per 3 tiles moved)
+        // Check Bleed Move Distance (1 dmg per 1 tile moved)
         if (die.bleedStacks > 0) {
-            die.bleedMoveDistance = (die.bleedMoveDistance || 0) + 1;
-            if (die.bleedMoveDistance % 3 === 0) {
-                die.hp -= 1;
-                die.totalDamageTaken = (die.totalDamageTaken || 0) + 1;
-                die.damagedThisWave = true;
-                if (die.hp < 0) die.hp = 0;
-                addFloatingText('-1 🩸 Bleed', die.q, die.r, '#ef4444', 16);
-                updateDiceHP();
-                if (checkWin()) return;
-            }
+            applyIndirectDamage(die, 1, '🩸 Bleed', '#ef4444');
+            if (checkWin()) return;
         }
 
         checkEventTilePickup(die);
 
-        // Immediate tile hazard trigger (Burning, Vine, Bees, Zombies)
+        // Immediate tile hazard trigger (Burning, Vine, Bear Trap, Bees, Zombies)
         triggerTileEffectOnDie(die);
         if (checkWin()) return;
         if (die.trapped > 0) break;
@@ -71,6 +64,7 @@ async function animateMove(die, path) {
         die.q = bounce.q; die.r = bounce.r;
         addFloatingText('🌀 Bounced!', die.q, die.r, '#a78bfa', 16);
         SFX.move();
+        checkEventTilePickup(die);
         triggerTileEffectOnDie(die);
     }
 }
@@ -280,6 +274,10 @@ async function tickWaveEffects() {
     game.wave++;
     updateWaveBadge();
 
+    // Clean up temporary clone dice (lasting 1 wave)
+    if (game.playerDice) game.playerDice = game.playerDice.filter(d => !d.isCloneDie);
+    if (game.cpuDice) game.cpuDice = game.cpuDice.filter(d => !d.isCloneDie);
+
     for (const d of allDice()) {
         if (d.concealed > 0) d.concealed--;
         if (d.halfDamage > 0) d.halfDamage--;
@@ -292,6 +290,10 @@ async function tickWaveEffects() {
         d.cloneActive = false;
         // Reset damagedThisWave flag at start of wave
         d.damagedThisWave = false;
+        // Standstill skill tracking (Archer)
+        d.didNotMoveLastWave = !d.movedThisWave;
+        d.movedThisWave = false;
+        d.hasAttackedThisTurn = false;
     }
 
     // Mage Zap Stack generation (every 2 waves, max 2 stacks)
@@ -421,6 +423,13 @@ async function tickWaveEffects() {
         if (v.wavesLeft <= 0) game.vineTraps.delete(k);
     }
 
+    if (game.bearTraps) {
+        for (const [k, v] of game.bearTraps) {
+            v.wavesLeft--;
+            if (v.wavesLeft <= 0) game.bearTraps.delete(k);
+        }
+    }
+
     game.bees = game.bees.filter(b => {
         b.wavesLeft--;
         return b.wavesLeft > 0;
@@ -504,20 +513,13 @@ async function executeZapSkill(mageDie) {
         }
     }
 
-    // Apply damage
-    nearestEnemy.hp -= zapDmg;
-    nearestEnemy.totalDamageTaken = (nearestEnemy.totalDamageTaken || 0) + zapDmg;
-    nearestEnemy.damagedThisWave = true;
-    if (nearestEnemy.hp < 0) nearestEnemy.hp = 0;
+    // Apply indirect damage with Aegis protection
+    const actualDmg = applyIndirectDamage(nearestEnemy, zapDmg, isCrit ? '⚡💥 CRIT ZAP' : '⚡ ZAP', '#c084fc');
 
     // Track in stats
-    if (mageDie.team === 'player' && game.stats) {
-        game.stats.damageDealt[mageDie.id] = (game.stats.damageDealt[mageDie.id] || 0) + zapDmg;
-        game.stats.damageDealt.total += zapDmg;
-        updateStatsDisplay();
-    } else if (mageDie.team === 'cpu' && game.stats) {
-        game.stats.damageTaken[nearestEnemy.id] = (game.stats.damageTaken[nearestEnemy.id] || 0) + zapDmg;
-        game.stats.damageTaken.total += zapDmg;
+    if (mageDie.team === 'player' && game.stats && actualDmg > 0) {
+        game.stats.damageDealt[mageDie.id] = (game.stats.damageDealt[mageDie.id] || 0) + actualDmg;
+        game.stats.damageDealt.total += actualDmg;
         updateStatsDisplay();
     }
 
@@ -525,26 +527,8 @@ async function executeZapSkill(mageDie) {
     const p = hexToPixel(nearestEnemy.q, nearestEnemy.r);
     spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#a855f7', 20, 3, 700);
 
-    if (isCrit) {
-        addFloatingText(`⚡💥 CRIT ZAP -${zapDmg} (Dist: ${minDist})!`, nearestEnemy.q, nearestEnemy.r, '#fbbf24', 22);
-    } else {
-        addFloatingText(`⚡ ZAP -${zapDmg} (Dist: ${minDist})!`, nearestEnemy.q, nearestEnemy.r, '#c084fc', 18);
-    }
-
-    // Check Rage Back Stronger
-    const enemyBackLvl = getSkillLevel(nearestEnemy, 'backStronger');
-    if (enemyBackLvl > 0 || nearestEnemy.archetype === 'Rage') {
-        const reqDmg = enemyBackLvl === 2 ? 9 : enemyBackLvl === 3 ? 7 : 10;
-        const newBonus = Math.floor(nearestEnemy.totalDamageTaken / reqDmg);
-        if (newBonus > (nearestEnemy.bonusDamageFromDamageTaken || 0)) {
-            const diff = newBonus - (nearestEnemy.bonusDamageFromDamageTaken || 0);
-            nearestEnemy.bonusDamageFromDamageTaken = newBonus;
-            addFloatingText(`😡 Rage +${diff} DMG!`, nearestEnemy.q, nearestEnemy.r, '#ef4444', 18);
-        }
-    }
-
     updateDiceHP();
-    updateZapButton();
+    updateSkillButtons();
     if (checkWin()) return true;
     return true;
 }
@@ -555,6 +539,122 @@ async function triggerPlayerMageZap() {
     if (!playerMage || (playerMage.zapStacks || 0) <= 0) return;
 
     await executeZapSkill(playerMage);
+}
+
+// Archer Long Shot Mastery: Ranged attack before moving
+async function executeArcherLongShot(archerDie, targetEnemy) {
+    if (!archerDie || !targetEnemy || archerDie.hasAttackedThisTurn) return false;
+    const longShotLvl = getSkillLevel(archerDie, 'longShot');
+    if (longShotLvl <= 0) return false;
+
+    const dist = hexDist(archerDie.q, archerDie.r, targetEnemy.q, targetEnemy.r);
+    const missRate = longShotLvl === 1 ? (0.02 * dist) : longShotLvl === 2 ? (0.01 * dist) : 0;
+
+    archerDie.hasAttackedThisTurn = true;
+    SFX.dash();
+
+    if (Math.random() < missRate) {
+        addFloatingText(`🏹 Missed! (${Math.round(missRate * 100)}%)`, targetEnemy.q, targetEnemy.r, '#94a3b8', 18);
+    } else {
+        const effDmg = getDieEffectiveDamage(archerDie);
+        const actualDmg = applyIndirectDamage(targetEnemy, effDmg, '🏹 Long Shot', '#38bdf8');
+        SFX.attack();
+        const p = hexToPixel(targetEnemy.q, targetEnemy.r);
+        spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#38bdf8', 18, 3, 700);
+
+        if (archerDie.team === 'player' && game.stats && actualDmg > 0) {
+            game.stats.damageDealt[archerDie.id] = (game.stats.damageDealt[archerDie.id] || 0) + actualDmg;
+            game.stats.damageDealt.total += actualDmg;
+            updateStatsDisplay();
+        }
+    }
+
+    updateDiceHP();
+    updateSkillButtons();
+    if (checkWin()) return true;
+    return true;
+}
+
+function triggerPlayerArcherShot() {
+    if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
+    const archer = aliveDice('player').find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0) && !d.hasAttackedThisTurn);
+    if (!archer) return;
+
+    game.archerSource = archer;
+    game.phase = 'PLAYER_ARCHER_TARGET';
+    setMessage('🏹 Long Shot: Click an enemy die to fire from distance.');
+    setButtons(false, false);
+}
+
+// Piercer Pivot Strike: Deals 8 damage in an area (2 sides Lvl 1, 3 sides Lvl 2, all sides Lvl 3)
+async function executePiercerPivot(piercerDie) {
+    if (!piercerDie || piercerDie.hasAttackedThisTurn) return false;
+    const pivotLvl = getSkillLevel(piercerDie, 'pivot');
+    if (pivotLvl <= 0) return false;
+
+    piercerDie.hasAttackedThisTurn = true;
+    const enemyTeam = piercerDie.team === 'player' ? 'cpu' : 'player';
+    const enemies = aliveDice(enemyTeam).filter(d => !d.concealed && hexDist(piercerDie.q, piercerDie.r, d.q, d.r) === 1);
+
+    // Limit enemies based on pivot level (2 at Lvl 1, 3 at Lvl 2, all at Lvl 3)
+    const maxTargets = pivotLvl === 1 ? 2 : pivotLvl === 2 ? 3 : 6;
+    const hitEnemies = enemies.slice(0, maxTargets);
+
+    SFX.attack();
+    const p = hexToPixel(piercerDie.q, piercerDie.r);
+    spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#f59e0b', 24, 4, 800, 4);
+
+    if (hitEnemies.length === 0) {
+        addFloatingText('🎯 Pivot Swung (No targets in range)', piercerDie.q, piercerDie.r, '#94a3b8', 16);
+    } else {
+        for (const target of hitEnemies) {
+            const toughLvl = getSkillLevel(target, 'toughness');
+            const toughRed = toughLvl === 1 ? 1 : toughLvl === 2 ? 3 : toughLvl === 3 ? 5 : 0;
+            let dmg = Math.max(1, 8 - toughRed);
+            if (target.halfDamage > 0) dmg = Math.ceil(dmg / 2);
+
+            target.hp -= dmg;
+            target.totalDamageTaken = (target.totalDamageTaken || 0) + dmg;
+            target.damagedThisWave = true;
+            if (target.hp < 0) target.hp = 0;
+
+            if (piercerDie.team === 'player' && game.stats) {
+                game.stats.damageDealt[piercerDie.id] = (game.stats.damageDealt[piercerDie.id] || 0) + dmg;
+                game.stats.damageDealt.total += dmg;
+                updateStatsDisplay();
+            }
+
+            addFloatingText(`-${dmg} 🎯 Pivot!`, target.q, target.r, '#f59e0b', 20);
+            const ep = hexToPixel(target.q, target.r);
+            spawnParticles(ep.x + gridCenterX, ep.y + gridCenterY, '#f59e0b', 15, 2, 600);
+        }
+    }
+
+    updateDiceHP();
+    updateSkillButtons();
+    if (checkWin()) return true;
+    return true;
+}
+
+function triggerPlayerPiercerPivot() {
+    if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
+    const piercer = aliveDice('player').find(d => (d.archetype === 'piercer' || getSkillLevel(d, 'pivot') > 0) && !d.hasAttackedThisTurn);
+    if (!piercer) return;
+
+    executePiercerPivot(piercer);
+}
+
+// Telekinator Mind Control: Active skill every 5 waves
+function triggerPlayerMindControl() {
+    if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
+    if (game.wave % 5 !== 0 || game.mindControlUsedWave === game.wave) return;
+    const tele = aliveDice('player').find(d => d.archetype === 'telekinator' || getSkillLevel(d, 'mindControl') > 0);
+    if (!tele || tele.frozen > 0 || tele.trapped > 0) return;
+
+    game.mindControlSource = tele;
+    game.phase = 'PLAYER_MIND_CONTROL_ENEMY';
+    setMessage('🔮 Mind Control: Click an enemy die to take control of.');
+    setButtons(false, false);
 }
 
 async function beginPlayerTurn() {
@@ -587,19 +687,20 @@ async function beginPlayerTurn() {
         d.damageMultiplier = 1;
         d.attackAgainActive = false;
         d.lastAttackedEnemyId = null;
+        d.hasAttackedThisTurn = false;
     });
 
     updateMoves();
     updateRollDisplay(vals, 'player');
     updateDiceHP();
-    updateZapButton();
+    updateSkillButtons();
     updateStatsDisplay();
 
-    // Check Telekinator Psychic Push skill
+    // Check Telekinator Psychic Push skill (40% / 65% / 90%)
     for (const d of alive) {
         const psychicLvl = getSkillLevel(d, 'psychic');
         if (psychicLvl > 0 && d.frozen === 0 && d.trapped === 0) {
-            const chance = psychicLvl * 0.20;
+            const chance = psychicLvl === 1 ? 0.40 : psychicLvl === 2 ? 0.65 : 0.90;
             const roll = Math.random();
             if (roll < chance) {
                 const cpuAlive = aliveDice('cpu').filter(cd => !cd.concealed);
@@ -732,9 +833,31 @@ async function handlePlayerMove(tq, tr) {
         const toughRed = toughLvl === 1 ? 1 : toughLvl === 2 ? 3 : toughLvl === 3 ? 5 : 0;
 
         const attackerEffDmg = getDieEffectiveDamage(die);
-        let rawDamage = Math.max(1, (attackerEffDmg * die.damageMultiplier) - toughRed);
+        let rawDamage = attackerEffDmg * die.damageMultiplier;
+
+        // Ninja Momentum Passive (+1 DMG per remaining move after attacking, max +5 DMG)
+        if (die.archetype === 'ninja') {
+            const remainingMoves = Math.max(0, die.moveAllowance - info.dist);
+            const ninjaBonus = Math.min(5, remainingMoves);
+            if (ninjaBonus > 0) {
+                rawDamage += ninjaBonus;
+                addFloatingText(`🥷 +${ninjaBonus} Momentum DMG!`, die.q, die.r, '#60a5fa', 16);
+            }
+        }
+
+        // Piercer Tank Killer (+10%/15%/20%/25% of target enemy HP)
+        const tankKillerLvl = getSkillLevel(die, 'tankKiller');
+        if (tankKillerLvl > 0) {
+            const pct = tankKillerLvl === 1 ? 0.10 : tankKillerLvl === 2 ? 0.15 : tankKillerLvl === 3 ? 0.20 : 0.25;
+            const tankBonus = Math.max(1, Math.round(enemyDie.hp * pct));
+            rawDamage += tankBonus;
+            addFloatingText(`🎯 Tank Killer +${tankBonus} DMG!`, die.q, die.r, '#f59e0b', 16);
+        }
+
+        rawDamage = Math.max(1, rawDamage - toughRed);
         const damage = enemyDie.halfDamage > 0 ? Math.ceil(rawDamage / 2) : rawDamage;
 
+        die.hasAttackedThisTurn = true;
         enemyDie.hp -= damage;
         enemyDie.totalDamageTaken += damage;
         enemyDie.damagedThisWave = true;
@@ -751,7 +874,7 @@ async function handlePlayerMove(tq, tr) {
         const enemyBackLvl = getSkillLevel(enemyDie, 'backStronger');
         if (enemyBackLvl > 0 || enemyDie.archetype === 'Rage') {
             const reqDmg = enemyBackLvl === 2 ? 9 : enemyBackLvl === 3 ? 7 : 10;
-            const newBonus = Math.floor(enemyDie.totalDamageTaken / reqDmg);
+            const newBonus = Math.min(10, Math.floor(enemyDie.totalDamageTaken / reqDmg));
             if (newBonus > (enemyDie.bonusDamageFromDamageTaken || 0)) {
                 const diff = newBonus - (enemyDie.bonusDamageFromDamageTaken || 0);
                 enemyDie.bonusDamageFromDamageTaken = newBonus;
@@ -778,7 +901,7 @@ async function handlePlayerMove(tq, tr) {
             const dieBackLvl = getSkillLevel(die, 'backStronger');
             if (dieBackLvl > 0 || die.archetype === 'Rage') {
                 const reqDmg = dieBackLvl === 2 ? 9 : dieBackLvl === 3 ? 7 : 10;
-                const newBonus = Math.floor(die.totalDamageTaken / reqDmg);
+                const newBonus = Math.min(10, Math.floor(die.totalDamageTaken / reqDmg));
                 if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
                     const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
                     die.bonusDamageFromDamageTaken = newBonus;
@@ -807,12 +930,12 @@ async function handlePlayerMove(tq, tr) {
             addFloatingText(`🚫 Anti-Healed!`, die.q, die.r, '#ef4444', 14);
         }
 
-        // Dracula Bleed: adds stacks based on level (1/2/3, Max 3)
+        // Dracula Bleed: adds stacks based on level (1/2/3, Max 3), lasts 2 waves
         const bleedLvl = getSkillLevel(die, 'bleed');
         if (bleedLvl > 0) {
             const stacksToAdd = bleedLvl === 1 ? 1 : bleedLvl === 2 ? 2 : 3;
             enemyDie.bleedStacks = Math.min(3, (enemyDie.bleedStacks || 0) + stacksToAdd);
-            enemyDie.antiHealTurns = 1;
+            enemyDie.antiHealTurns = 2;
             addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks}!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
         }
 
@@ -889,6 +1012,7 @@ async function handlePlayerMove(tq, tr) {
 
         updateMoves();
         updateDiceHP();
+        updateSkillButtons();
         await delay(600);
 
         if (checkWin()) return;
@@ -914,6 +1038,7 @@ async function handlePlayerMove(tq, tr) {
 
         updateMoves();
         updateDiceHP();
+        updateSkillButtons();
 
         if (totalMovesLeft('player') <= 0) {
             game.selectedDie = null;
@@ -971,7 +1096,8 @@ async function handlePsychicTileSelect(q, r) {
         spawnParticles(newP.x + gridCenterX, newP.y + gridCenterY, '#c084fc', 18, 3, 600);
         addFloatingText('🔮 Pushed!', q, r, '#c084fc', 20);
 
-        // Immediate tile hazard check when pushed
+        // Immediate tile hazard & card pickup check when pushed
+        checkEventTilePickup(enemy);
         triggerTileEffectOnDie(enemy);
 
         game.psychicSource = null;
@@ -980,6 +1106,77 @@ async function handlePsychicTileSelect(q, r) {
 
         game.phase = 'PLAYER_TURN';
         setMessage('Your turn! Click a green die to move.');
+        setButtons(true, false);
+        return true;
+    }
+    return false;
+}
+
+// Mind Control Selection Handlers
+function handleMindControlEnemySelect(q, r) {
+    const die = getDieAt(q, r);
+    if (die && die.team === 'cpu' && die.hp > 0 && !die.concealed) {
+        game.mindControlVictim = die;
+        game.mindControlVictimPreHp = die.hp;
+        game.phase = 'PLAYER_MIND_CONTROL_TARGET';
+        setMessage(`🔮 Controlling ${die.archetype.toUpperCase()}! Click ANOTHER enemy die to attack.`);
+        addFloatingText('🔮 MIND CONTROLLED!', die.q, die.r, '#c084fc', 20);
+        SFX.powerUp();
+        return true;
+    }
+    return false;
+}
+
+async function handleMindControlTargetSelect(q, r) {
+    const victim = game.mindControlVictim;
+    if (!victim) return false;
+
+    const target = getDieAt(q, r);
+    if (target && target.team === 'cpu' && target.id !== victim.id && target.hp > 0 && !target.concealed) {
+        game.phase = 'PLAYER_ANIMATING';
+        SFX.attack();
+
+        const baseDmg = victim.baseDamage || 3;
+        target.hp -= baseDmg;
+        target.totalDamageTaken = (target.totalDamageTaken || 0) + baseDmg;
+        target.damagedThisWave = true;
+        if (target.hp < 0) target.hp = 0;
+
+        addFloatingText(`-${baseDmg} 🔮 Mind Hit!`, target.q, target.r, '#c084fc', 20);
+        const p = hexToPixel(target.q, target.r);
+        spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#c084fc', 20, 3, 700);
+
+        await delay(600);
+
+        // Revert victim: cannot have gained HP, and takes flat 6 recoil damage (absorbed by Aegis if present)
+        victim.hp = Math.min(game.mindControlVictimPreHp, victim.hp);
+        applyIndirectDamage(victim, 6, '🔮 Mind Control Recoil', '#c084fc');
+
+        game.mindControlUsedWave = game.wave;
+        game.mindControlVictim = null;
+        game.mindControlSource = null;
+
+        updateDiceHP();
+        updateSkillButtons();
+        await delay(600);
+
+        if (checkWin()) return true;
+
+        game.phase = 'PLAYER_TURN';
+        setMessage('Your turn! Click a green die to move.');
+        setButtons(true, false);
+        return true;
+    }
+    return false;
+}
+
+function handleArcherTargetSelect(q, r) {
+    const enemy = getDieAt(q, r);
+    if (enemy && enemy.team === 'cpu' && enemy.hp > 0 && !enemy.concealed && game.archerSource) {
+        executeArcherLongShot(game.archerSource, enemy);
+        game.archerSource = null;
+        game.phase = 'PLAYER_TURN';
+        setMessage('Arrow fired! You can still move your archer or another die.');
         setButtons(true, false);
         return true;
     }

@@ -218,30 +218,7 @@ function triggerTileEffectOnDie(die) {
     const k = hKey(die.q, die.r);
 
     if (game.burningTiles && game.burningTiles.has(k)) {
-        die.hp -= 3;
-        die.totalDamageTaken = (die.totalDamageTaken || 0) + 3;
-        die.damagedThisWave = true;
-        if (die.hp < 0) die.hp = 0;
-
-        if (die.team === 'player' && game.stats) {
-            game.stats.damageTaken[die.id] = (game.stats.damageTaken[die.id] || 0) + 3;
-            game.stats.damageTaken.total += 3;
-            if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
-        }
-
-        const backLvl = getSkillLevel(die, 'backStronger');
-        if (backLvl > 0 || die.archetype === 'Rage') {
-            const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
-            const newBonus = Math.floor(die.totalDamageTaken / reqDmg);
-            if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
-                const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
-                die.bonusDamageFromDamageTaken = newBonus;
-                addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
-            }
-        }
-
-        addFloatingText('-3 🔥', die.q, die.r, '#ef4444', 18);
-        updateDiceHP();
+        applyIndirectDamage(die, 3, '🔥 Burning Tile', '#ef4444');
         if (checkWin()) return;
     }
 
@@ -253,16 +230,27 @@ function triggerTileEffectOnDie(die) {
         updateDiceHP();
     }
 
+    // Check Bear Trap on this tile
+    if (game.bearTraps && game.bearTraps.has(k)) {
+        const trap = game.bearTraps.get(k);
+        if (trap && trap.team !== die.team) {
+            game.bearTraps.delete(k);
+            applyIndirectDamage(die, 5, '🪤 Bear Trap', '#ef4444');
+            die.trapped = 2;
+            die.moveAllowance = 0;
+            addFloatingText('🪤 Bear Trapped!', die.q, die.r, '#ef4444', 20);
+            SFX.attack();
+            updateDiceHP();
+            if (checkWin()) return;
+        }
+    }
+
     // Check bee collision on this tile
     if (game.bees) {
         for (const bee of game.bees) {
             if (bee.q === die.q && bee.r === die.r && die.concealed === 0) {
-                die.hp -= 5;
-                die.totalDamageTaken = (die.totalDamageTaken || 0) + 5;
-                die.damagedThisWave = true;
+                applyIndirectDamage(die, 5, '🐝 Bee Attack', '#fbbf24');
                 die.moveDebuff = Math.max(die.moveDebuff, 1);
-                if (die.hp < 0) die.hp = 0;
-                addFloatingText('-5 🐝', die.q, die.r, '#fbbf24', 20);
                 SFX.attack();
                 updateDiceHP();
                 if (checkWin()) return;
@@ -274,11 +262,7 @@ function triggerTileEffectOnDie(die) {
     if (game.zombies) {
         for (const zombie of game.zombies) {
             if (zombie.q === die.q && zombie.r === die.r && zombie.team !== die.team && die.concealed === 0) {
-                die.hp -= zombie.damage;
-                die.totalDamageTaken = (die.totalDamageTaken || 0) + zombie.damage;
-                die.damagedThisWave = true;
-                if (die.hp < 0) die.hp = 0;
-                addFloatingText(`-${zombie.damage} 🧟`, die.q, die.r, '#10b981', 20);
+                applyIndirectDamage(die, zombie.damage, '🧟 Zombie', '#10b981');
                 SFX.attack();
                 updateDiceHP();
                 if (checkWin()) return;
@@ -310,24 +294,8 @@ async function processBeesMovement() {
             }
 
             if (bee.q === closestDie.q && bee.r === closestDie.r) {
-                closestDie.hp -= 5;
-                closestDie.totalDamageTaken = (closestDie.totalDamageTaken || 0) + 5;
-                closestDie.damagedThisWave = true;
+                applyIndirectDamage(closestDie, 5, '🐝 Bee Attack', '#fbbf24');
                 closestDie.moveDebuff = Math.max(closestDie.moveDebuff, 1);
-                if (closestDie.hp < 0) closestDie.hp = 0;
-
-                const beeBackLvl = getSkillLevel(closestDie, 'backStronger');
-                if (beeBackLvl > 0 || closestDie.archetype === 'Rage') {
-                    const reqDmg = beeBackLvl === 2 ? 9 : beeBackLvl === 3 ? 7 : 10;
-                    const newBonus = Math.floor(closestDie.totalDamageTaken / reqDmg);
-                    if (newBonus > (closestDie.bonusDamageFromDamageTaken || 0)) {
-                        const diff = newBonus - (closestDie.bonusDamageFromDamageTaken || 0);
-                        closestDie.bonusDamageFromDamageTaken = newBonus;
-                        addFloatingText(`😡 Rage +${diff} DMG!`, closestDie.q, closestDie.r, '#ef4444', 18);
-                    }
-                }
-
-                addFloatingText('-5 🐝', bee.q, bee.r, '#fbbf24', 20);
                 SFX.attack();
                 updateDiceHP();
                 if (checkWin()) return;
@@ -361,23 +329,7 @@ async function processZombiesMovement() {
             }
 
             if (zombie.q === targetDie.q && zombie.r === targetDie.r) {
-                targetDie.hp -= zombie.damage;
-                targetDie.totalDamageTaken = (targetDie.totalDamageTaken || 0) + zombie.damage;
-                targetDie.damagedThisWave = true;
-                if (targetDie.hp < 0) targetDie.hp = 0;
-
-                const backLvl = getSkillLevel(targetDie, 'backStronger');
-                if (backLvl > 0 || targetDie.archetype === 'Rage') {
-                    const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
-                    const newBonus = Math.floor(targetDie.totalDamageTaken / reqDmg);
-                    if (newBonus > (targetDie.bonusDamageFromDamageTaken || 0)) {
-                        const diff = newBonus - (targetDie.bonusDamageFromDamageTaken || 0);
-                        targetDie.bonusDamageFromDamageTaken = newBonus;
-                        addFloatingText(`😡 Rage +${diff} DMG!`, targetDie.q, targetDie.r, '#ef4444', 18);
-                    }
-                }
-
-                addFloatingText(`-${zombie.damage} 🧟`, zombie.q, zombie.r, '#10b981', 20);
+                applyIndirectDamage(targetDie, zombie.damage, '🧟 Zombie', '#10b981');
                 SFX.attack();
                 updateDiceHP();
                 if (checkWin()) return;

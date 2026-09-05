@@ -10,9 +10,9 @@ let animRotation = 0;
 let turnTimerInterval = null;
 let stopwatchInterval = null;
 
-function createDie(id, q, r, team, archetypeId='dracula', isSplit=false) {
+function createDie(id, q, r, team, archetypeId='dracula', isSplit=false, isClone=false) {
     const arch = ARCHETYPES.find(a => a.id === archetypeId) || ARCHETYPES[0];
-    const skills = JSON.parse(JSON.stringify(arch.skills));
+    const skills = isClone ? [] : JSON.parse(JSON.stringify(arch.skills));
     const maxHp = gameSettings ? gameSettings.startHp : MAX_HP;
 
     return {
@@ -26,6 +26,7 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false) {
         damageMultiplier: 1,
         attackAgainActive: false,
         cloneActive: false,
+        isCloneDie: isClone,
         halfDamage: 0,
         archetype: arch.id,
         icon: arch.icon,
@@ -40,6 +41,10 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false) {
         undeadTriggered: false,
         isSplit: isSplit, // Split dice roll 1-3 instead of 1-6
         damagedThisWave: false,
+        aegisShield: 0,
+        movedThisWave: false,
+        didNotMoveLastWave: false,
+        hasAttackedThisTurn: false
     };
 }
 
@@ -72,6 +77,7 @@ function resetGame() {
         voidTiles: new Map(),
         burningTiles: new Map(),
         vineTraps: new Map(),
+        bearTraps: new Map(),
         bees: [],
         zombies: [], // Necromancer zombies
         playerHand: [],
@@ -82,6 +88,7 @@ function resetGame() {
         lastAttackedId: null,
         turnTimeLeft: TURN_TIME_LIMIT,
         matchTimeSeconds: 0,
+        mindControlUsedWave: -99,
         stats: {
             damageDealt: { p1: 0, p2: 0, p3: 0, total: 0 },
             damageTaken: { p1: 0, p2: 0, p3: 0, total: 0 },
@@ -111,11 +118,60 @@ function getDieRageBonus(die) {
     const backLvl = getSkillLevel(die, 'backStronger');
     if (backLvl > 0 || die.archetype === 'Rage') {
         const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
-        return Math.floor((die.totalDamageTaken || 0) / reqDmg);
+        const bonus = Math.floor((die.totalDamageTaken || 0) / reqDmg);
+        return Math.min(10, bonus); // Max limit +10
     }
     return 0;
 }
 
 function getDieEffectiveDamage(die) {
-    return (die.baseDamage || 1) + getDieRageBonus(die);
+    let dmg = (die.baseDamage || 1) + getDieRageBonus(die);
+    // Archer Skill 2: Standstill (+2/+4/+7 if did not move in previous wave)
+    const standstillLvl = getSkillLevel(die, 'standstill');
+    if (standstillLvl > 0 && die.didNotMoveLastWave) {
+        const bonus = standstillLvl === 1 ? 2 : standstillLvl === 2 ? 4 : 7;
+        dmg += bonus;
+    }
+    return dmg;
+}
+
+// Helper for indirect / non-contact damage (absorbed by Aegis shield up to 15)
+function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444') {
+    if (!die || die.hp <= 0 || amount <= 0) return 0;
+
+    let dmgToApply = amount;
+    if (die.aegisShield > 0) {
+        const absorbed = Math.min(die.aegisShield, dmgToApply);
+        die.aegisShield -= absorbed;
+        dmgToApply -= absorbed;
+        addFloatingText(`🛡️ Aegis -${absorbed} (${die.aegisShield} left)`, die.q, die.r, '#38bdf8', 16);
+    }
+
+    if (dmgToApply > 0) {
+        die.hp -= dmgToApply;
+        die.totalDamageTaken = (die.totalDamageTaken || 0) + dmgToApply;
+        die.damagedThisWave = true;
+        if (die.hp < 0) die.hp = 0;
+
+        if (die.team === 'player' && game.stats) {
+            game.stats.damageTaken[die.id] = (game.stats.damageTaken[die.id] || 0) + dmgToApply;
+            game.stats.damageTaken.total += dmgToApply;
+            if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
+        }
+
+        const backLvl = getSkillLevel(die, 'backStronger');
+        if (backLvl > 0 || die.archetype === 'Rage') {
+            const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
+            const newBonus = Math.min(10, Math.floor(die.totalDamageTaken / reqDmg));
+            if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
+                const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
+                die.bonusDamageFromDamageTaken = newBonus;
+                addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
+            }
+        }
+
+        addFloatingText(`-${dmgToApply} ${sourceName}`, die.q, die.r, color, 18);
+    }
+    if (typeof updateDiceHP === 'function') updateDiceHP();
+    return dmgToApply;
 }

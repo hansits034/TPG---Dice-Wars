@@ -67,9 +67,41 @@ async function playerAutoUseCards() {
                 continue;
             }
         }
+        if (card.id === 'sprint') {
+            const best = alive.find(d => d.moveAllowance > 0) || alive[0];
+            if (best) {
+                applyCardWithTarget(card, 'player', i, [best]);
+                await delay(300);
+                continue;
+            }
+        }
+        if (card.id === 'cure') {
+            const debuffed = alive.find(d => d.frozen > 0 || d.trapped > 0 || d.bleedStacks > 0 || d.hp <= MAX_HP * 0.7);
+            if (debuffed) {
+                applyCardWithTarget(card, 'player', i, [debuffed]);
+                await delay(300);
+                continue;
+            }
+        }
+        if (card.id === 'aegis') {
+            const targetDie = alive.find(d => (d.aegisShield || 0) < 15) || alive[0];
+            if (targetDie) {
+                applyCardWithTarget(card, 'player', i, [targetDie]);
+                await delay(300);
+                continue;
+            }
+        }
+        if (card.id === 'bearTrap') {
+            const emptyHex = allHexes.find(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r) && !game.eventTiles.has(hKey(h.q, h.r)) && !game.bearTraps.has(hKey(h.q, h.r)));
+            if (emptyHex) {
+                applyCardWithTarget(card, 'player', i, [emptyHex]);
+                await delay(300);
+                continue;
+            }
+        }
         if (card.id === 'clone') {
             const best = alive.reduce((a, b) => b.moveAllowance > a.moveAllowance ? b : a);
-            if (best.moveAllowance > 0) {
+            if (best && alive.length < 5) {
                 applyCardWithTarget(card, 'player', i, [best]);
                 await delay(300);
                 continue;
@@ -173,9 +205,41 @@ async function cpuUseCards() {
                 continue;
             }
         }
+        if (card.id === 'sprint') {
+            const best = alive.find(d => d.moveAllowance > 0) || alive[0];
+            if (best) {
+                applyCardWithTarget(card, 'cpu', i, [best]);
+                await delay(500);
+                continue;
+            }
+        }
+        if (card.id === 'cure') {
+            const debuffed = alive.find(d => d.frozen > 0 || d.trapped > 0 || d.bleedStacks > 0 || d.hp <= MAX_HP * 0.7);
+            if (debuffed) {
+                applyCardWithTarget(card, 'cpu', i, [debuffed]);
+                await delay(500);
+                continue;
+            }
+        }
+        if (card.id === 'aegis') {
+            const targetDie = alive.find(d => (d.aegisShield || 0) < 15) || alive[0];
+            if (targetDie) {
+                applyCardWithTarget(card, 'cpu', i, [targetDie]);
+                await delay(500);
+                continue;
+            }
+        }
+        if (card.id === 'bearTrap') {
+            const emptyHex = allHexes.find(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r) && !game.eventTiles.has(hKey(h.q, h.r)) && !game.bearTraps.has(hKey(h.q, h.r)));
+            if (emptyHex) {
+                applyCardWithTarget(card, 'cpu', i, [emptyHex]);
+                await delay(500);
+                continue;
+            }
+        }
         if (card.id === 'clone') {
             const best = alive.reduce((a, b) => b.moveAllowance > a.moveAllowance ? b : a);
-            if (best.moveAllowance > 0) {
+            if (best && alive.length < 5) {
                 applyCardWithTarget(card, 'cpu', i, [best]);
                 await delay(500);
                 continue;

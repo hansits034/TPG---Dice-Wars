@@ -69,11 +69,13 @@ function updateDiceHP() {
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
         const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks || 0}/2">⚡${d.zapStacks || 0}</span>` : '';
+        const aegisBadge = (d.aegisShield || 0) > 0 ? `<span class="move-badge" style="color:#38bdf8;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.3);" title="Aegis Shield: ${d.aegisShield} HP">🛡️${d.aegisShield}</span>` : '';
         const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--cpu)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
             <span>${Math.max(0, d.hp)}</span>
+            ${aegisBadge}
             ${rageBadge}
             ${zapBadge}
             ${d.moveAllowance > 0 && game.currentTurn === 'cpu' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
@@ -91,11 +93,13 @@ function updateDiceHP() {
         const rageBonus = getDieRageBonus(d);
         const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
         const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks || 0}/2">⚡${d.zapStacks || 0}</span>` : '';
+        const aegisBadge = (d.aegisShield || 0) > 0 ? `<span class="move-badge" style="color:#38bdf8;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.3);" title="Aegis Shield: ${d.aegisShield} HP">🛡️${d.aegisShield}</span>` : '';
         const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--player)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
             <span>${Math.max(0, d.hp)}</span>
+            ${aegisBadge}
             ${rageBadge}
             ${zapBadge}
             ${d.moveAllowance > 0 && game.currentTurn === 'player' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
@@ -129,19 +133,67 @@ function setMessage(msg) {
     if (el) el.textContent = msg;
 }
 
-function updateZapButton() {
-    const zapBtn = document.getElementById('btn-zap');
-    if (!zapBtn) return;
-    const playerMage = aliveDice('player').find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
-    if (!playerMage) {
-        zapBtn.style.display = 'none';
-        return;
-    }
-    zapBtn.style.display = 'inline-flex';
-    const stacks = playerMage.zapStacks || 0;
-    zapBtn.textContent = `⚡ ZAP (${stacks})`;
+function updateSkillButtons() {
     const isPlayerTurn = game.phase === 'PLAYER_TURN' && game.currentTurn === 'player';
-    zapBtn.disabled = !isPlayerTurn || stacks <= 0 || playerMage.frozen > 0 || playerMage.trapped > 0;
+
+    // 1. Mage Zap
+    const zapBtn = document.getElementById('btn-zap');
+    if (zapBtn) {
+        const playerMage = aliveDice('player').find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
+        if (playerMage) {
+            zapBtn.style.display = 'inline-flex';
+            const stacks = playerMage.zapStacks || 0;
+            zapBtn.textContent = `⚡ ZAP (${stacks})`;
+            zapBtn.disabled = !isPlayerTurn || stacks <= 0 || playerMage.frozen > 0 || playerMage.trapped > 0;
+        } else {
+            zapBtn.style.display = 'none';
+        }
+    }
+
+    // 2. Archer Long Shot
+    const archerBtn = document.getElementById('btn-archer');
+    if (archerBtn) {
+        const playerArcher = aliveDice('player').find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0));
+        if (playerArcher) {
+            archerBtn.style.display = 'inline-flex';
+            const used = playerArcher.hasAttackedThisTurn;
+            archerBtn.disabled = !isPlayerTurn || used || playerArcher.frozen > 0 || playerArcher.trapped > 0;
+        } else {
+            archerBtn.style.display = 'none';
+        }
+    }
+
+    // 3. Piercer Pivot
+    const pivotBtn = document.getElementById('btn-pivot');
+    if (pivotBtn) {
+        const playerPiercer = aliveDice('player').find(d => (d.archetype === 'piercer' || getSkillLevel(d, 'pivot') > 0));
+        if (playerPiercer) {
+            pivotBtn.style.display = 'inline-flex';
+            const used = playerPiercer.hasAttackedThisTurn;
+            pivotBtn.disabled = !isPlayerTurn || used || playerPiercer.frozen > 0 || playerPiercer.trapped > 0;
+        } else {
+            pivotBtn.style.display = 'none';
+        }
+    }
+
+    // 4. Telekinator Mind Control
+    const mindBtn = document.getElementById('btn-mind-control');
+    if (mindBtn) {
+        const playerTele = aliveDice('player').find(d => (d.archetype === 'telekinator' || getSkillLevel(d, 'mindControl') > 0));
+        if (playerTele) {
+            mindBtn.style.display = 'inline-flex';
+            const isWave5 = game.wave % 5 === 0;
+            const available = isWave5 && game.mindControlUsedWave !== game.wave;
+            mindBtn.disabled = !isPlayerTurn || !available || playerTele.frozen > 0 || playerTele.trapped > 0;
+            mindBtn.textContent = available ? '🔮 MIND CONTROL' : `🔮 Mind Ctrl (W${Math.ceil((game.wave+1)/5)*5})`;
+        } else {
+            mindBtn.style.display = 'none';
+        }
+    }
+}
+
+function updateZapButton() {
+    updateSkillButtons();
 }
 
 function setButtons(endEnabled, deselectEnabled) {
@@ -149,7 +201,7 @@ function setButtons(endEnabled, deselectEnabled) {
     const desBtn = document.getElementById('btn-deselect');
     if (endBtn) endBtn.disabled = !endEnabled;
     if (desBtn) desBtn.disabled = !deselectEnabled;
-    updateZapButton();
+    updateSkillButtons();
 }
 
 function updateCardHand() {
@@ -276,7 +328,7 @@ function renderCodexRoleDetails(archId) {
 
     let activeSkillCount = 0;
     const skillsHTML = arch.skills.map((s) => {
-        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'doctorMastery';
+        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'doctorMastery' || s.id === 'momentum' || s.id === 'standstill';
         let tagText = 'PASSIVE';
         if (!isPassive) {
             activeSkillCount++;
@@ -353,23 +405,57 @@ function openDiceGuideModal() {
 }
 
 function openHelpModal() {
+    const totalWeight = CARD_DEFS.reduce((s, c) => s + c.weight, 0);
+    const cardRowsHTML = CARD_DEFS.map(c => {
+        const pct = ((c.weight / totalWeight) * 100).toFixed(1);
+        const rarityBadge = `<span class="card-rarity-tag ${c.rarity}">${c.rarity.toUpperCase()}</span>`;
+        return `
+            <tr>
+                <td style="text-align:left;font-weight:700;">${c.icon} ${c.name}</td>
+                <td>${rarityBadge}</td>
+                <td style="color:var(--gold);font-weight:800;">${pct}%</td>
+                <td style="text-align:left;color:var(--text-dim);font-size:0.8rem;">${c.desc}</td>
+            </tr>
+        `;
+    }).join('');
+
     showOverlay(`
-        <div class="overlay-box help-content">
+        <div class="overlay-box help-content" style="max-width:680px;max-height:85vh;overflow-y:auto;">
             <h2>❓ How to Play & Game Info</h2>
             
             <h3>🎲 Core Rules & Archetypes</h3>
             <ul>
-                <li><strong>HP:</strong> Each die has <strong>50 Base HP</strong>.</li>
-                <li><strong>Damage:</strong> Equal to initial rolled die face value.</li>
-                <li><strong>Unique Roles:</strong> Each of your 3 dice has a distinct role.</li>
-                <li><strong>Classes:</strong> 🩸 Dracula, 😇 Angel, 🥷 Ninja, 🗡️ Samurai, 🔮 Telekinator, 🛡️ Defender, 😡 Rage, 💀 Necromancer, 🧙 Mage, 🩺 Doctor.</li>
+                <li><strong>HP:</strong> Each die starts with <strong>50/75/100 HP</strong> (configurable in match settings).</li>
+                <li><strong>Damage:</strong> Equal to initial rolled die face value + buffs/skills.</li>
+                <li><strong>Unique Roles:</strong> 12 Playable Classes:</li>
             </ul>
+            <div style="font-size:0.85rem;color:var(--text-dim);margin:8px 0 16px 12px;line-height:1.6;">
+                🩸 Dracula &bull; 😇 Angel &bull; 🥷 Ninja &bull; 🗡️ Samurai &bull; 🔮 Telekinator &bull; 🛡️ Defender &bull; 😡 Rage &bull; 💀 Necromancer &bull; 🧙 Mage &bull; 🩺 Doctor &bull; 🎯 Piercer &bull; 🏹 Archer
+            </div>
+
+            <h3>🃏 Event Card Drop Probabilities</h3>
+            <p style="font-size:0.85rem;color:var(--text-dim);margin-bottom:8px;">When picking up an event tile, cards drop with the following chances:</p>
+            <div style="overflow-x:auto;margin-bottom:18px;">
+                <table class="help-probability-table" style="width:100%;border-collapse:collapse;text-align:center;font-size:0.85rem;">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--border);color:var(--text-dim);">
+                            <th style="text-align:left;padding:6px 8px;">Card</th>
+                            <th style="padding:6px 8px;">Rarity</th>
+                            <th style="padding:6px 8px;">Drop Rate</th>
+                            <th style="text-align:left;padding:6px 8px;">Effect</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${cardRowsHTML}
+                    </tbody>
+                </table>
+            </div>
 
             <h3>⚡ Roguelike Upgrades (Every 4 Waves)</h3>
-            <p>Choose 1 of 3 random skill level-ups to empower your dice!</p>
+            <p>Choose 1 of 3 random skill level-ups to empower your dice with new abilities!</p>
 
             <h3>✨ Event Tiles (Every 3 Waves)</h3>
-            <p>Sparkling tiles spawn on empty hexes. Step on them to pick up a card (Max 3 in hand, or 4 with Defender/Samurai/Doctor).</p>
+            <p>Sparkling tiles spawn on empty hexes. Step on them or push enemies onto them to pick up cards (Max 3 in hand, or 4 with Defender/Samurai/Doctor).</p>
 
             <h3>⚡ Arena Blitz Events (Every 5 Waves - 16.6% Each)</h3>
             <ul>
@@ -380,7 +466,7 @@ function openHelpModal() {
                 <li><strong>🐝 Bee Attack (16.6%):</strong> 5 bees chase nearest die (5 damage & -1 move).</li>
                 <li><strong>🧙 Magician (16.6%):</strong> Grants 2 random cards to everyone.</li>
             </ul>
-            <div style="text-align:center;margin-top:14px;">
+            <div style="text-align:center;margin-top:16px;">
                 <button class="overlay-btn" onclick="hideOverlay();">Close</button>
             </div>
         </div>

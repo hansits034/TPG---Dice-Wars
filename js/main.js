@@ -30,6 +30,18 @@ function onCanvasClick(e) {
         handlePsychicTileSelect(hex.q, hex.r);
         return;
     }
+    if (game.phase === 'PLAYER_ARCHER_TARGET') {
+        handleArcherTargetSelect(hex.q, hex.r);
+        return;
+    }
+    if (game.phase === 'PLAYER_MIND_CONTROL_ENEMY') {
+        handleMindControlEnemySelect(hex.q, hex.r);
+        return;
+    }
+    if (game.phase === 'PLAYER_MIND_CONTROL_TARGET') {
+        handleMindControlTargetSelect(hex.q, hex.r);
+        return;
+    }
 
     if (game.phase !== 'PLAYER_TURN') return;
 
@@ -63,7 +75,7 @@ function onCanvasMouseMove(e) {
             } else {
                 canvas.style.cursor = 'default';
             }
-        } else if (game.phase === 'PLAYER_CARD_TARGET' || game.phase === 'PLAYER_CARD_DASH_DIE' || game.phase === 'PLAYER_CARD_DASH_DIR' || game.phase === 'PLAYER_PSYCHIC_ENEMY' || game.phase === 'PLAYER_PSYCHIC_TILE') {
+        } else if (game.phase === 'PLAYER_CARD_TARGET' || game.phase === 'PLAYER_CARD_DASH_DIE' || game.phase === 'PLAYER_CARD_DASH_DIR' || game.phase === 'PLAYER_PSYCHIC_ENEMY' || game.phase === 'PLAYER_PSYCHIC_TILE' || game.phase === 'PLAYER_ARCHER_TARGET' || game.phase === 'PLAYER_MIND_CONTROL_ENEMY' || game.phase === 'PLAYER_MIND_CONTROL_TARGET') {
             canvas.style.cursor = 'pointer';
         }
     } else {
