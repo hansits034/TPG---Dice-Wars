@@ -1134,7 +1134,6 @@ async function handlePlayerMove(tq, tr) {
                 addCombatLog(`${die.icon} ${die.id.toUpperCase()} inflicted Bleed x${enemyDie.bleedStacks} on ${enemyDie.icon} ${enemyDie.id.toUpperCase()} (3 turns)!`, '🩸', '#ef4444');
             }
         }
-        }
 
         addFloatingText(`-${damage}`, tq, tr, '#ff4466', 22);
         if (die.damageMultiplier > 1) addFloatingText(`×${die.damageMultiplier}!`, tq, tr - 0.4, '#f59e0b', 14);

@@ -360,7 +360,6 @@ function render() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.restore();
     }
-    }
 
     if (game.bees) {
         for (const bee of game.bees) {
