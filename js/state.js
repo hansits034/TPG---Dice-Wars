@@ -33,6 +33,7 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false, isClone
         skills,
         zapStacks: arch.id === 'mage' ? 1 : 0, // Starts with 1 stack
         bleedStacks: 0,
+        bleedTurns: 0,
         bleedMoveDistance: 0,
         antiHealTurns: 0,
         totalDamageTaken: 0,
@@ -44,7 +45,11 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false, isClone
         aegisShield: 0,
         movedThisWave: false,
         didNotMoveLastWave: false,
-        hasAttackedThisTurn: false
+        hasAttackedThisTurn: false,
+        isMindControlled: false,
+        originalTeam: team,
+        mindControlledWaves: 0,
+        preControlHp: maxHp
     };
 }
 
@@ -89,6 +94,9 @@ function resetGame() {
         turnTimeLeft: TURN_TIME_LIMIT,
         matchTimeSeconds: 0,
         mindControlUsedWave: -99,
+        pivotUsedWave: -99,
+        pivotPreview: false,
+        combatLog: [],
         stats: {
             damageDealt: { p1: 0, p2: 0, p3: 0, total: 0 },
             damageTaken: { p1: 0, p2: 0, p3: 0, total: 0 },
@@ -174,4 +182,22 @@ function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444'
     }
     if (typeof updateDiceHP === 'function') updateDiceHP();
     return dmgToApply;
+}
+
+function addCombatLog(text, icon='⚔️', color='#e2e8f0') {
+    if (!game || !game.combatLog) {
+        if (game) game.combatLog = [];
+        else return;
+    }
+    const entry = {
+        wave: game.wave || 1,
+        text,
+        icon,
+        color,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    };
+    game.combatLog.unshift(entry);
+    if (game.combatLog.length > 50) game.combatLog.pop();
+
+    if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
 }

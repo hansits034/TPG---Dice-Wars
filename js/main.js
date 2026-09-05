@@ -43,7 +43,20 @@ function onCanvasClick(e) {
         return;
     }
 
-    if (game.phase !== 'PLAYER_TURN') return;
+    if (game.pivotPreview && game.pivotPiercer) {
+        const pDie = game.pivotPiercer;
+        const pLvl = getSkillLevel(pDie, 'pivot') || 1;
+        const pivotSides = pLvl === 1 ? 2 : pLvl === 2 ? 3 : 6;
+        const neighbors = (typeof getNeighbors === 'function' ? getNeighbors(pDie.q, pDie.r) : []).slice(0, pivotSides);
+        if ((hex.q === pDie.q && hex.r === pDie.r) || neighbors.some(n => n.q === hex.q && n.r === hex.r)) {
+            executePiercerPivot(pDie);
+            return;
+        } else {
+            game.pivotPreview = false;
+            setMessage('Pivot cancelled.');
+            updateSkillButtons();
+        }
+    }
 
     const die = getDieAt(hex.q, hex.r);
 

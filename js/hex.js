@@ -36,6 +36,9 @@ const DIRS = [
 function getNeighbors(q, r) {
     return DIRS.map(d => ({ q: q + d.q, r: r + d.r })).filter(h => isValidHex(h.q, h.r));
 }
+function hexNeighbors(q, r) {
+    return getNeighbors(q, r);
+}
 
 function isValidHex(q, r) {
     return Math.abs(q) <= GRID_RADIUS && Math.abs(r) <= GRID_RADIUS && Math.abs(q + r) <= GRID_RADIUS;

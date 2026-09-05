@@ -182,7 +182,8 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const concealBonus = getSkillLevel(die, 'concealMastery');
             const duration = 2 + concealBonus;
             die.concealed = duration;
-            addFloatingText(`👻 Concealed (${duration} waves)!`, die.q, die.r, '#a78bfa', 16);
+            addFloatingText(`🔰 Immunity (${duration} waves)!`, die.q, die.r, '#a78bfa', 16);
+            addCombatLog(`${die.icon} ${die.id.toUpperCase()} gained Immunity for ${duration} waves!`, '🔰', '#a78bfa');
             SFX.conceal();
             const p = hexToPixel(die.q, die.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#a78bfa', 15, 1.5, 1000, 3);
@@ -213,13 +214,22 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const tq = d1.q, tr = d1.r;
             d1.q = d2.q; d1.r = d2.r;
             d2.q = tq; d2.r = tr;
+            d1.movedThisWave = true;
+            d2.movedThisWave = true;
             addFloatingText('🔀 Swapped!', d1.q, d1.r, '#60a5fa', 16);
+            addCombatLog(`🔀 Swapped positions of ${d1.icon} ${d1.id.toUpperCase()} and ${d2.icon} ${d2.id.toUpperCase()}!`, '🔀', '#60a5fa');
             SFX.swap();
             const p1 = hexToPixel(d1.q, d1.r);
             const p2 = hexToPixel(d2.q, d2.r);
             spawnParticles(p1.x+gridCenterX, p1.y+gridCenterY, '#60a5fa', 12, 2, 600);
             spawnParticles(p2.x+gridCenterX, p2.y+gridCenterY, '#60a5fa', 12, 2, 600);
             
+            if (typeof applyForcedMoveBleed === 'function') {
+                const swapDist = hexDist(d1.q, d1.r, d2.q, d2.r);
+                applyForcedMoveBleed(d1, swapDist);
+                applyForcedMoveBleed(d2, swapDist);
+            }
+
             // Check tile effects upon swapping
             if (typeof checkEventTilePickup === 'function') {
                 checkEventTilePickup(d1);
@@ -313,6 +323,7 @@ async function executeDash(die, dir, team, handIdx) {
             else {
                 die.q = path[landIdx].q;
                 die.r = path[landIdx].r;
+                die.movedThisWave = true;
                 die.renderX = null;
                 die.renderY = null;
                 animRotation = 0;
@@ -341,6 +352,10 @@ async function executeDash(die, dir, team, handIdx) {
 
     // Trigger tile effects on landing
     triggerTileEffectOnDie(die);
+
+    if (typeof applyForcedMoveBleed === 'function') {
+        applyForcedMoveBleed(die, landIdx);
+    }
 
     updateDiceHP();
     updateCardHand();

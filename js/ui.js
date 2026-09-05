@@ -7,14 +7,22 @@ function startTurnTimer() {
     updateTimerDisplay();
 
     turnTimerInterval = setInterval(() => {
-        if (game.phase !== 'PLAYER_TURN' && game.phase !== 'CPU_TURN') return;
+        const nonTurnPhases = ['START', 'SELECT', 'SETTINGS', 'PLAYER_ROLL', 'CPU_ROLL', 'WAVE_CLEAR', 'UPGRADE_MODAL', 'GAME_OVER'];
+        if (nonTurnPhases.includes(game.phase)) return;
         game.turnTimeLeft--;
         updateTimerDisplay();
 
         if (game.turnTimeLeft <= 0) {
             stopTurnTimer();
             addFloatingText('⏰ Time Out!', 0, 0, '#ef4444', 24);
-            if (game.currentTurn === 'player') endTurn();
+            if (game.currentTurn === 'player') {
+                if (typeof cancelCard === 'function') cancelCard();
+                game.pivotPreview = false;
+                game.archerSource = null;
+                game.mcTelekinator = null;
+                game.phase = 'PLAYER_TURN';
+                endTurn();
+            }
         }
     }, 1000);
 }
@@ -58,9 +66,12 @@ function updateDiceHP() {
     const plEl = document.getElementById('player-dice-hp');
     if (!cpuEl || !plEl) return;
 
+    const defaultMaxHp = game && game.settings ? game.settings.startHp : (typeof gameSettings !== 'undefined' ? gameSettings.startHp : 50);
+
     cpuEl.innerHTML = game.cpuDice.map((d, i) => {
-        const maxH = d.maxHp || MAX_HP;
-        const pct = Math.max(0, d.hp / maxH);
+        const maxH = d.maxHp || defaultMaxHp;
+        const pct = Math.max(0, Math.min(1, d.hp / maxH));
+        const pctText = Math.max(0, Math.round(pct * 100));
         const color = pct > 0.5 ? '#fb7185' : pct > 0.25 ? '#fbbf24' : '#ef4444';
         const frozenCls = d.frozen > 0 ? ' frozen' : '';
         const concealCls = d.concealed > 0 ? ' concealed' : '';
@@ -74,7 +85,7 @@ function updateDiceHP() {
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--cpu)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
-            <span>${Math.max(0, d.hp)}</span>
+            <span>${Math.max(0, d.hp)}/${maxH} (${pctText}%)</span>
             ${aegisBadge}
             ${rageBadge}
             ${zapBadge}
@@ -83,8 +94,9 @@ function updateDiceHP() {
     }).join('');
 
     plEl.innerHTML = game.playerDice.map((d, i) => {
-        const maxH = d.maxHp || MAX_HP;
-        const pct = Math.max(0, d.hp / maxH);
+        const maxH = d.maxHp || defaultMaxHp;
+        const pct = Math.max(0, Math.min(1, d.hp / maxH));
+        const pctText = Math.max(0, Math.round(pct * 100));
         const color = pct > 0.5 ? '#34d399' : pct > 0.25 ? '#fbbf24' : '#ef4444';
         const frozenCls = d.frozen > 0 ? ' frozen' : '';
         const concealCls = d.concealed > 0 ? ' concealed' : '';
@@ -98,7 +110,7 @@ function updateDiceHP() {
         return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
             <span style="color:var(--player)" class="die-class-badge">${dieLabel}</span>
             <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
-            <span>${Math.max(0, d.hp)}</span>
+            <span>${Math.max(0, d.hp)}/${maxH} (${pctText}%)</span>
             ${aegisBadge}
             ${rageBadge}
             ${zapBadge}
@@ -163,29 +175,37 @@ function updateSkillButtons() {
         }
     }
 
-    // 3. Piercer Pivot
+    // 3. Piercer Pivot (3 Wave CD + 2-Click Preview)
     const pivotBtn = document.getElementById('btn-pivot');
     if (pivotBtn) {
-        const playerPiercer = aliveDice('player').find(d => (d.archetype === 'piercer' || getSkillLevel(d, 'pivot') > 0));
+        const playerPiercer = aliveDice('player').find(d => (d.archetype === 'piercer' && getSkillLevel(d, 'pivot') > 0));
         if (playerPiercer) {
             pivotBtn.style.display = 'inline-flex';
+            const isPivotReady = (game.wave - (game.pivotUsedWave || -99)) >= 3;
             const used = playerPiercer.hasAttackedThisTurn;
-            pivotBtn.disabled = !isPlayerTurn || used || playerPiercer.frozen > 0 || playerPiercer.trapped > 0;
+            if (game.pivotPreview) {
+                pivotBtn.textContent = '🎯 CONFIRM PIVOT (8 DMG)';
+                pivotBtn.disabled = false;
+                pivotBtn.style.boxShadow = '0 0 25px rgba(245, 158, 11, 0.9)';
+            } else {
+                pivotBtn.textContent = isPivotReady ? '🎯 Pivot (8 DMG)' : `🎯 Pivot (W${(game.pivotUsedWave || 0) + 3})`;
+                pivotBtn.disabled = !isPlayerTurn || !isPivotReady || used || playerPiercer.frozen > 0 || playerPiercer.trapped > 0;
+                pivotBtn.style.boxShadow = '';
+            }
         } else {
             pivotBtn.style.display = 'none';
         }
     }
 
-    // 4. Telekinator Mind Control
+    // 4. Telekinator Mind Control (5 Wave CD + Unlock Check)
     const mindBtn = document.getElementById('btn-mind-control');
     if (mindBtn) {
-        const playerTele = aliveDice('player').find(d => (d.archetype === 'telekinator' || getSkillLevel(d, 'mindControl') > 0));
+        const playerTele = aliveDice('player').find(d => (d.archetype === 'telekinator' && getSkillLevel(d, 'mindControl') > 0));
         if (playerTele) {
             mindBtn.style.display = 'inline-flex';
-            const isWave5 = game.wave % 5 === 0;
-            const available = isWave5 && game.mindControlUsedWave !== game.wave;
-            mindBtn.disabled = !isPlayerTurn || !available || playerTele.frozen > 0 || playerTele.trapped > 0;
-            mindBtn.textContent = available ? '🔮 MIND CONTROL' : `🔮 Mind Ctrl (W${Math.ceil((game.wave+1)/5)*5})`;
+            const isMindReady = (game.wave - (game.mindControlUsedWave || -99)) >= 5;
+            mindBtn.disabled = !isPlayerTurn || !isMindReady || playerTele.frozen > 0 || playerTele.trapped > 0;
+            mindBtn.textContent = isMindReady ? '🔮 MIND CONTROL' : `🔮 Mind Ctrl (W${(game.mindControlUsedWave || 0) + 5})`;
         } else {
             mindBtn.style.display = 'none';
         }
@@ -495,7 +515,7 @@ function toggleStatsPanel() {
 
 function switchStatsTab(tab) {
     currentStatsTab = tab;
-    ['dealt', 'taken', 'heal'].forEach(t => {
+    ['dealt', 'taken', 'heal', 'log'].forEach(t => {
         const btn = document.getElementById(`tab-stat-${t}`);
         if (btn) {
             if (t === tab) btn.classList.add('active');
@@ -602,6 +622,22 @@ function updateStatsDisplay() {
             </div>
             <div class="stat-total-summary">Total HP Restored: <strong style="color:#34d399">+${data.total || 0}</strong></div>
         `;
+    } else if (currentStatsTab === 'log') {
+        const logs = game.combatLog || [];
+        if (logs.length === 0) {
+            area.innerHTML = `<div style="color:var(--text-dim);font-size:0.8rem;text-align:center;padding:25px 0;">No combat actions recorded yet.</div>`;
+        } else {
+            const logsHTML = logs.map(entry => `
+                <div class="combat-log-item" style="border-left: 2.5px solid ${entry.color || '#38bdf8'};">
+                    <div class="combat-log-meta">
+                        <span class="combat-log-wave">W${entry.wave}</span>
+                        <span class="combat-log-time">${entry.time}</span>
+                    </div>
+                    <div class="combat-log-text">${entry.icon} ${entry.text}</div>
+                </div>
+            `).join('');
+            area.innerHTML = `<div class="combat-log-container">${logsHTML}</div>`;
+        }
     }
 }
 

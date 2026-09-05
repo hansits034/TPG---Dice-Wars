@@ -142,10 +142,15 @@ async function triggerArenaBlitz() {
             const available = allHexes.filter(h => !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
             active.forEach((d, i) => {
                 if (available[i]) {
+                    const oldQ = d.q, oldR = d.r;
                     d.q = available[i].q;
                     d.r = available[i].r;
+                    d.movedThisWave = true;
                     const p = hexToPixel(d.q, d.r);
                     spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#818cf8', 20, 4, 800, 4);
+                    if (typeof applyForcedMoveBleed === 'function') {
+                        applyForcedMoveBleed(d, hexDist(oldQ, oldR, d.q, d.r));
+                    }
                     triggerTileEffectOnDie(d);
                 }
             });

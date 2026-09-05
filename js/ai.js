@@ -316,19 +316,73 @@ async function beginCpuTurn() {
                 if (pAlive.length > 0) {
                     const victim = pAlive[Math.floor(Math.random() * pAlive.length)];
                     const emptyHex = findNearestEmptyHex(victim.q, victim.r);
-                    const oldP = hexToPixel(victim.q, victim.r);
+                    const oldQ = victim.q;
+                    const oldR = victim.r;
+                    const oldP = hexToPixel(oldQ, oldR);
                     victim.q = emptyHex.q; victim.r = emptyHex.r;
+                    victim.movedThisWave = true;
                     const newP = hexToPixel(emptyHex.q, emptyHex.r);
 
                     SFX.swap();
                     spawnParticles(oldP.x + gridCenterX, oldP.y + gridCenterY, '#c084fc', 18, 3, 600);
                     spawnParticles(newP.x + gridCenterX, newP.y + gridCenterY, '#c084fc', 18, 3, 600);
                     addFloatingText('🔮 CPU Psychic Push!', emptyHex.q, emptyHex.r, '#c084fc', 20);
+                    addCombatLog(`🔮 CPU Telekinator Psychic Pushed ${victim.icon} ${victim.id.toUpperCase()}!`, '🔮', '#c084fc');
+                    if (typeof applyForcedMoveBleed === 'function') {
+                        applyForcedMoveBleed(victim, hexDist(oldQ, oldR, emptyHex.q, emptyHex.r));
+                    }
                     triggerTileEffectOnDie(victim);
                     await delay(800);
                     break;
                 }
             }
+        }
+    }
+
+    // CPU Telekinator Mind Control (every 5 waves if unlocked)
+    const cpuTele = alive.find(d => (d.archetype === 'telekinator' && getSkillLevel(d, 'mindControl') > 0) && d.frozen === 0);
+    if (cpuTele && (game.wave - (game.mindControlUsedWave || -99)) >= 5) {
+        const pAlive = aliveDice('player').filter(pd => !pd.concealed);
+        if (pAlive.length > 0) {
+            const victim = pAlive[Math.floor(Math.random() * pAlive.length)];
+            victim.isMindControlled = true;
+            victim.mindControlledWaves = 2;
+            victim.originalTeam = 'player';
+            victim.preControlHp = victim.hp;
+            victim.team = 'cpu';
+
+            game.playerDice = game.playerDice.filter(d => d.id !== victim.id);
+            if (!game.cpuDice.some(d => d.id === victim.id)) game.cpuDice.push(victim);
+
+            game.mindControlUsedWave = game.wave;
+            SFX.powerUp();
+            addFloatingText('🔮 CPU MIND CONTROL (2 Waves)!', victim.q, victim.r, '#c084fc', 20);
+            addCombatLog(`🔮 CPU Mind Controlled ${victim.icon} ${victim.id.toUpperCase()} for 2 waves!`, '🔮', '#c084fc');
+            updateDiceHP();
+            await delay(800);
+        }
+    }
+
+    // CPU Piercer Pivot Strike (every 3 waves if in range)
+    const cpuPiercer = alive.find(d => (d.archetype === 'piercer' && getSkillLevel(d, 'pivot') > 0) && !d.hasAttackedThisTurn && d.frozen === 0);
+    if (cpuPiercer && (game.wave - (game.pivotUsedWave || -99)) >= 3) {
+        const pAlive = aliveDice('player').filter(pd => !pd.concealed && hexDist(cpuPiercer.q, cpuPiercer.r, pd.q, pd.r) === 1);
+        if (pAlive.length > 0) {
+            await executePiercerPivot(cpuPiercer);
+            await delay(500);
+            if (checkWin()) return;
+        }
+    }
+
+    // CPU Archer Long Shot (if in range)
+    const cpuArcher = alive.find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0) && !d.hasAttackedThisTurn && d.frozen === 0);
+    if (cpuArcher) {
+        const pAlive = aliveDice('player').filter(pd => !pd.concealed);
+        if (pAlive.length > 0) {
+            const target = pAlive.sort((a, b) => a.hp - b.hp)[0]; // target weakest
+            await executeArcherLongShot(cpuArcher, target);
+            await delay(500);
+            if (checkWin()) return;
         }
     }
 
@@ -396,9 +450,9 @@ async function beginCpuTurn() {
 
             await animateMove(die, [{ q: die.q, r: die.r }, { q: targetHex.q, r: targetHex.r }]);
 
-            // Calculate damage with Toughness reduction: -1 / -3 / -5
+            // Calculate damage with Toughness reduction: -3 / -5 / -7
             const toughLvl = getSkillLevel(enemyDie, 'toughness');
-            const toughRed = toughLvl === 1 ? 1 : toughLvl === 2 ? 3 : toughLvl === 3 ? 5 : 0;
+            const toughRed = toughLvl === 1 ? 3 : toughLvl === 2 ? 5 : toughLvl === 3 ? 7 : 0;
 
             const attackerEffDmg = getDieEffectiveDamage(die);
             let rawDamage = Math.max(1, (attackerEffDmg * die.damageMultiplier) - toughRed);
@@ -457,11 +511,14 @@ async function beginCpuTurn() {
             if (bleedLvl > 0) {
                 const stacksToAdd = bleedLvl === 1 ? 1 : bleedLvl === 2 ? 2 : 3;
                 enemyDie.bleedStacks = Math.min(3, (enemyDie.bleedStacks || 0) + stacksToAdd);
-                enemyDie.antiHealTurns = 1;
-                addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks}!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
+                enemyDie.bleedTurns = 3;
+                enemyDie.antiHealTurns = 3;
+                addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks} (3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
+                addCombatLog(`${die.icon} ${die.id.toUpperCase()} inflicted Bleed x${enemyDie.bleedStacks} on ${enemyDie.icon} ${enemyDie.id.toUpperCase()} (3 turns)!`, '🩸', '#ef4444');
             }
 
             addFloatingText(`-${damage}`, targetHex.q, targetHex.r, '#ff4466', 22);
+            addCombatLog(`🔴 CPU ${die.icon} attacked ${enemyDie.icon} ${enemyDie.id.toUpperCase()} for ${damage} DMG!`, '⚔️', '#ff4466');
             const p = hexToPixel(targetHex.q, targetHex.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#ff4466', 15, 3, 600, 3);
 
@@ -475,6 +532,7 @@ async function beginCpuTurn() {
             if (enemyDie.hp <= 0) {
                 enemyDie.hp = 0;
                 addFloatingText('💀 DESTROYED!', targetHex.q, targetHex.r + 0.5, '#ff2244', 16);
+                addCombatLog(`💀 ${enemyDie.icon} ${enemyDie.id.toUpperCase()} was destroyed!`, '💀', '#ef4444');
                 SFX.destroy();
                 die.q = targetHex.q; die.r = targetHex.r;
 
@@ -506,6 +564,7 @@ async function beginCpuTurn() {
                             const emptyHex = findNearestEmptyHex(enemyDie.q, enemyDie.r);
                             enemyDie.q = emptyHex.q;
                             enemyDie.r = emptyHex.r;
+                            enemyDie.movedThisWave = true;
                             addFloatingText(`😇 REVIVED (${enemyDie.hp} HP)!`, enemyDie.q, enemyDie.r, '#fbbf24', 20);
                             SFX.heal();
                             break;
@@ -515,6 +574,7 @@ async function beginCpuTurn() {
             } else {
                 die.q = targetHex.q; die.r = targetHex.r;
                 enemyDie.q = prevQ; enemyDie.r = prevR;
+                enemyDie.movedThisWave = true;
             }
 
             die.damageMultiplier = 1;

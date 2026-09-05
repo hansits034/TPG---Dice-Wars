@@ -157,17 +157,43 @@ function drawDieFace(cx, cy, size, value, bgColor, isSelected, rotation=0, alpha
 }
 
 function drawHPBar(cx, cy, width, hp, maxHp, team, alpha=1) {
-    const h = 4, w = width * 0.62;
+    const h = 5, w = width * 0.65;
     const x = cx - w / 2, y = cy + width * 0.38;
-    const pct = Math.max(0, hp / maxHp);
-    const barColor = pct > 0.5 ? (team === 'player' ? '#34d399' : '#fb7185') :
-        pct > 0.25 ? '#fbbf24' : '#ef4444';
+    const effectiveMax = maxHp || (game && game.settings ? game.settings.startHp : (typeof gameSettings !== 'undefined' ? gameSettings.startHp : 50));
+    const pct = Math.min(1, Math.max(0, hp / effectiveMax));
+
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.beginPath(); ctx.roundRect(x, y, w, h, 2); ctx.fill();
+    // Dark background with subtle bezel
+    ctx.fillStyle = 'rgba(10, 15, 30, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(x - 0.5, y - 0.5, w + 1, h + 1, 3);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+
     if (pct > 0) {
-        ctx.fillStyle = barColor;
-        ctx.beginPath(); ctx.roundRect(x, y, w * pct, h, 2); ctx.fill();
+        const fillW = Math.max(2, w * pct);
+        const grad = ctx.createLinearGradient(x, y, x + fillW, y);
+        if (pct > 0.5) {
+            if (team === 'player') {
+                grad.addColorStop(0, '#059669');
+                grad.addColorStop(1, '#34d399');
+            } else {
+                grad.addColorStop(0, '#be123c');
+                grad.addColorStop(1, '#fb7185');
+            }
+        } else if (pct > 0.25) {
+            grad.addColorStop(0, '#d97706');
+            grad.addColorStop(1, '#fbbf24');
+        } else {
+            grad.addColorStop(0, '#991b1b');
+            grad.addColorStop(1, '#ef4444');
+        }
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.roundRect(x, y, fillW, h, 2.5);
+        ctx.fill();
     }
     ctx.globalAlpha = 1;
 }
@@ -272,11 +298,32 @@ function render() {
             }
         }
 
+        let isPivotTile = false;
+        if (game.pivotPreview && game.pivotPiercer) {
+            const pDie = game.pivotPiercer;
+            const pLvl = getSkillLevel(pDie, 'pivot') || 1;
+            const pivotSides = pLvl === 1 ? 2 : pLvl === 2 ? 3 : 6;
+            const neighbors = hexNeighbors(pDie.q, pDie.r).slice(0, pivotSides);
+            if (neighbors.some(n => n.q === h.q && n.r === h.r)) {
+                isPivotTile = true;
+                const pulse = Math.sin(now / 150) * 0.2 + 0.8;
+                fill = `rgba(245, 158, 11, ${0.35 * pulse})`;
+                stroke = `rgba(251, 191, 36, ${0.95 * pulse})`;
+                lw = 2.5;
+            }
+        }
+
         if (hoveredHex && hoveredHex.q === h.q && hoveredHex.r === h.r) {
-            fill = game.reachable && game.reachable.has(key) ?
-                (game.reachable.get(key).isAttack ? 'rgba(244,63,94,0.3)' : 'rgba(56,189,248,0.25)') :
-                'rgba(129,140,248,0.12)';
-            lw = 2;
+            if (isPivotTile) {
+                fill = 'rgba(245, 158, 11, 0.6)';
+                stroke = '#f59e0b';
+                lw = 3;
+            } else {
+                fill = game.reachable && game.reachable.has(key) ?
+                    (game.reachable.get(key).isAttack ? 'rgba(244,63,94,0.3)' : 'rgba(56,189,248,0.25)') :
+                    'rgba(129,140,248,0.12)';
+                lw = 2;
+            }
         }
 
         if (game.selectedDie && game.selectedDie.q === h.q && game.selectedDie.r === h.r) {
@@ -331,7 +378,7 @@ function render() {
         const selected = game.selectedDie && game.selectedDie.id === die.id;
         const alpha = die.concealed > 0 ? (die.team === game.currentTurn ? 0.4 : 0.08) : 1;
         drawDieFace(sx, sy, HEX_SIZE, getDieEffectiveDamage(die), bgColor, selected, 0, alpha, die.cloneActive, die.icon);
-        drawHPBar(sx, sy, HEX_SIZE, die.hp, MAX_HP, die.team, alpha);
+        drawHPBar(sx, sy, HEX_SIZE, die.hp, die.maxHp, die.team, alpha);
         if (game.currentTurn === die.team) drawMoveBadge(sx, sy, HEX_SIZE, die.moveAllowance, die.team);
         drawStatusIcons(sx, sy, HEX_SIZE, die);
     }
@@ -343,7 +390,7 @@ function render() {
             const bgColor = die.team === 'player' ? '#059669' : '#be123c';
             const alpha = die.concealed > 0 ? 0.4 : 1;
             drawDieFace(sx, sy, HEX_SIZE, getDieEffectiveDamage(die), bgColor, false, animRotation, alpha, die.cloneActive, die.icon);
-            drawHPBar(sx, sy, HEX_SIZE, die.hp, MAX_HP, die.team, alpha);
+            drawHPBar(sx, sy, HEX_SIZE, die.hp, die.maxHp, die.team, alpha);
 
             if (die.cloneActive) {
                 spawnTrail(sx, sy, '#c084fc', 2, 3);
