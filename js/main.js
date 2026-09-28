@@ -43,15 +43,19 @@ function onCanvasClick(e) {
         return;
     }
 
+    // Only the player's own turn accepts die selection / movement clicks
+    if (game.phase !== 'PLAYER_TURN') return;
+
     if (game.pivotPreview && game.pivotPiercer) {
         const pDie = game.pivotPiercer;
         const pLvl = getSkillLevel(pDie, 'pivot') || 1;
         const pivotHexes = typeof getPivotHexes === 'function' ? getPivotHexes(pDie.q, pDie.r, pLvl) : [];
         if ((hex.q === pDie.q && hex.r === pDie.r) || pivotHexes.some(n => n.q === hex.q && n.r === hex.r)) {
-            executePiercerPivot(pDie);
+            executePiercerPivot(pDie).then(finishPlayerSkillAction);
             return;
         } else {
             game.pivotPreview = false;
+            game.pivotPiercer = null;
             setMessage('Pivot cancelled.');
             updateSkillButtons();
         }
@@ -78,6 +82,10 @@ function onCanvasMouseMove(e) {
 
     if (isValidHex(hex.q, hex.r)) {
         hoveredHex = hex;
+        // show a skill card for any visible die under the cursor
+        const hovered = getDieAt(hex.q, hex.r);
+        if (hovered && (!hovered.concealed || hovered.team === 'player')) showDieTooltip(hovered, e.clientX, e.clientY);
+        else hideDieTooltip();
         if (game.phase === 'PLAYER_TURN') {
             const d = getDieAt(hex.q, hex.r);
             if (d && d.team === 'player' && d.hp > 0) {
@@ -93,10 +101,11 @@ function onCanvasMouseMove(e) {
     } else {
         hoveredHex = null;
         canvas.style.cursor = 'default';
+        hideDieTooltip();
     }
 }
 
-function onCanvasMouseLeave() { hoveredHex = null; canvas.style.cursor = 'default'; }
+function onCanvasMouseLeave() { hoveredHex = null; canvas.style.cursor = 'default'; hideDieTooltip(); }
 function onResize() { setupCanvas(); }
 
 function onCanvasTouch(e) {

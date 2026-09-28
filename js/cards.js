@@ -116,6 +116,7 @@ function applyCardWithTarget(card, team, handIdx, targets) {
                     updateStatsDisplay();
                 }
                 addFloatingText(`+${healAmt} HP`, die.q, die.r, '#34d399', 20);
+                fxHeal(die);
                 SFX.heal();
                 const p = hexToPixel(die.q, die.r);
                 spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#34d399', 18, 2, 800, 3);
@@ -148,6 +149,7 @@ function applyCardWithTarget(card, team, handIdx, targets) {
                 updateStatsDisplay();
             }
             addFloatingText('🧪 Cured & +5 HP!', die.q, die.r, '#c084fc', 20);
+            fxHeal(die);
             SFX.heal();
             const p = hexToPixel(die.q, die.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#c084fc', 20, 2, 800, 4);
@@ -157,6 +159,7 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const die = targets[0];
             die.aegisShield = (die.aegisShield || 0) + 15;
             addFloatingText(`🛡️ Aegis Shield +15!`, die.q, die.r, '#38bdf8', 20);
+            { const p = dieFxPos(die); fxRing(p.x, p.y + HEX_SIZE * 0.2, '#7EC8F2', HEX_SIZE * 1.4, 600, 5); }
             SFX.powerUp();
             const p = hexToPixel(die.q, die.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#38bdf8', 20, 2, 900, 4);
@@ -178,7 +181,9 @@ function applyCardWithTarget(card, team, handIdx, targets) {
         case 'freeze': {
             const die = targets[0];
             die.frozen = 2;
+            die.petrified = false;
             addFloatingText('❄️ Frozen (2 turns)!', die.q, die.r, '#60a5fa', 18);
+            { const p = dieFxPos(die); fxRing(p.x, p.y + HEX_SIZE * 0.2, '#BFE6FF', HEX_SIZE * 1.4, 600, 6); spawnChunks(p.x, p.y, '#DDF1FF', 8, 2.5); }
             SFX.freeze();
             const p = hexToPixel(die.q, die.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#93c5fd', 20, 2, 1000, 4);
@@ -190,6 +195,7 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const duration = 2 + concealBonus;
             die.concealed = duration;
             addFloatingText(`🔰 Immunity (${duration} waves)!`, die.q, die.r, '#a78bfa', 16);
+            { const p = dieFxPos(die); fxRing(p.x, p.y + HEX_SIZE * 0.2, '#C8B6FF', HEX_SIZE * 1.4, 600, 5); }
             addCombatLog(`${die.icon} ${die.id.toUpperCase()} gained Immunity for ${duration} waves!`, '🔰', '#a78bfa');
             SFX.conceal();
             const p = hexToPixel(die.q, die.r);
@@ -211,6 +217,7 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             teamDiceArray.push(cloneDie);
 
             addFloatingText('🪞 CLONE SUMMONED (1 Wave)!', emptyHex.q, emptyHex.r, '#c084fc', 20);
+            { const p = hexScreen(emptyHex.q, emptyHex.r); addBoardFx('poof', 600, { x: p.x, y: p.y }); }
             SFX.powerUp();
             const p = hexToPixel(emptyHex.q, emptyHex.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#c084fc', 24, 3, 1000, 4);
@@ -221,6 +228,8 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const tq = d1.q, tr = d1.r;
             d1.q = d2.q; d1.r = d2.r;
             d2.q = tq; d2.r = tr;
+            startSlide(d1, d2.q, d2.r, 520, 0.8);
+            startSlide(d2, d1.q, d1.r, 520, 0.8);
             d1.movedThisWave = true;
             d2.movedThisWave = true;
             addFloatingText('🔀 Swapped!', d1.q, d1.r, '#60a5fa', 16);
@@ -248,7 +257,7 @@ function applyCardWithTarget(card, team, handIdx, targets) {
         }
         case 'block': {
             for (const hex of targets) {
-                game.blocks.set(hKey(hex.q, hex.r), { turnsLeft: 4 });
+                game.blocks.set(hKey(hex.q, hex.r), { turnsLeft: 4, bornAt: performance.now() + targets.indexOf(hex) * 90 });
                 addFloatingText('🧱', hex.q, hex.r, '#a8a29e', 20);
                 const p = hexToPixel(hex.q, hex.r);
                 spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#a8a29e', 10, 1.5, 600);
@@ -268,46 +277,48 @@ function applyCardWithTarget(card, team, handIdx, targets) {
     }
 }
 
-async function executeDash(die, dir, team, handIdx) {
-    const hand = team === 'player' ? game.playerHand : game.cpuHand;
-    hand.splice(handIdx, 1);
-
-    SFX.dash();
-
+// Straight-line Dash path: passes through enemies (hitting them), stops at walls / own dice / arena edge
+function computeDashPath(die, dir, team) {
     const path = [{ q: die.q, r: die.r }];
-    let cq = die.q, cr = die.r;
     const hitEnemies = [];
+    let cq = die.q, cr = die.r;
+    const ownDice = aliveDice(team);
 
     while (true) {
         const nq = cq + dir.q, nr = cr + dir.r;
         if (!isValidHex(nq, nr) || isBlocked(nq, nr)) break;
-
-        const ownDice = aliveDice(team);
         if (ownDice.some(d => d.q === nq && d.r === nr && d.id !== die.id)) break;
 
         path.push({ q: nq, r: nr });
-
         const enemy = getDieAt(nq, nr);
-        if (enemy && enemy.team !== team && !enemy.concealed) {
-            hitEnemies.push(enemy);
-        }
-
+        if (enemy && enemy.team !== team && !enemy.concealed) hitEnemies.push(enemy);
         cq = nq; cr = nr;
     }
 
-    if (path.length < 2) {
-        addFloatingText('Blocked!', die.q, die.r, '#ef4444', 14);
-        game.activeCard = null;
-        if (team === 'player') { game.phase = 'PLAYER_TURN'; updateCardHand(); }
-        return;
-    }
-
+    // Land on the furthest hex that is not occupied
     let landIdx = path.length - 1;
     while (landIdx > 0) {
         const lh = path[landIdx];
         const occupant = getDieAt(lh.q, lh.r);
         if (!occupant || occupant.id === die.id) break;
         landIdx--;
+    }
+    return { path, hitEnemies, landIdx };
+}
+
+async function executeDash(die, dir, team, handIdx) {
+    const hand = team === 'player' ? game.playerHand : game.cpuHand;
+    hand.splice(handIdx, 1);
+
+    SFX.dash();
+
+    const { path, hitEnemies, landIdx } = computeDashPath(die, dir, team);
+
+    if (path.length < 2 || landIdx === 0 && hitEnemies.length === 0) {
+        addFloatingText('Blocked!', die.q, die.r, '#ef4444', 14);
+        game.activeCard = null;
+        if (team === 'player') { game.phase = 'PLAYER_TURN'; setButtons(true, false); updateCardHand(); }
+        return;
     }
 
     animatingDie = die;
@@ -330,7 +341,7 @@ async function executeDash(die, dir, team, handIdx) {
             else {
                 die.q = path[landIdx].q;
                 die.r = path[landIdx].r;
-                die.movedThisWave = true;
+                if (landIdx > 0) die.movedThisWave = true;
                 die.renderX = null;
                 die.renderY = null;
                 animRotation = 0;
@@ -346,21 +357,20 @@ async function executeDash(die, dir, team, handIdx) {
     const baseDashDmg = 4 + superDashBonus + rageBonus;
 
     for (const enemy of hitEnemies) {
-        const dmg = enemy.halfDamage > 0 ? Math.ceil(baseDashDmg / 2) : baseDashDmg;
-        enemy.hp -= dmg;
-        enemy.totalDamageTaken = (enemy.totalDamageTaken || 0) + dmg;
-        enemy.damagedThisWave = true;
-        if (enemy.hp < 0) enemy.hp = 0;
-        addFloatingText(`-${dmg} 💨`, enemy.q, enemy.r, '#fbbf24', 20);
+        if (enemy.hp <= 0) continue; // may have died from a chained Explode
+        let dmg = Math.max(1, baseDashDmg - getToughnessReduction(enemy));
+        if (enemy.halfDamage > 0) dmg = Math.ceil(dmg / 2);
         const p = hexToPixel(enemy.q, enemy.r);
         spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#fbbf24', 15, 3, 600, 3);
         SFX.attack();
+        addCombatLog(`${die.team === 'cpu' ? '🔴 CPU ' : ''}${die.icon} ${die.id.toUpperCase()} Dash hit ${enemy.icon} ${enemy.id.toUpperCase()} for ${dmg} DMG!`, '💨', '#fbbf24');
+        dealDirectDamage(enemy, dmg, die, '💨', '#fbbf24');
     }
 
     // Trigger tile effects on landing
-    triggerTileEffectOnDie(die);
-
-    if (typeof applyForcedMoveBleed === 'function') {
+    if (die.hp > 0) {
+        checkEventTilePickup(die);
+        triggerTileEffectOnDie(die);
         applyForcedMoveBleed(die, landIdx);
     }
 
@@ -372,9 +382,13 @@ async function executeDash(die, dir, team, handIdx) {
         game.reachable = null;
         game.parents = null;
         game.activeCard = null;
-        game.phase = 'PLAYER_TURN';
-        await delay(300);
         if (checkWin()) return;
+        await delay(300);
+        if (game.phase === 'GAME_OVER') return;
+        game.phase = 'PLAYER_TURN';
+        setButtons(true, false);
+    } else {
+        checkWin();
     }
 }
 
@@ -431,6 +445,10 @@ function handleCardTarget(q, r) {
 function handleDashDieSelect(q, r) {
     const die = getDieAt(q, r);
     if (die && die.team === 'player' && die.hp > 0) {
+        if (die.frozen > 0 || die.trapped > 0) {
+            setMessage(`💨 ${die.icon} ${die.id.toUpperCase()} is ${die.frozen > 0 ? 'frozen' : 'trapped'} and cannot Dash. Pick another die.`);
+            return false;
+        }
         game.activeCard._dashDie = die;
         game.phase = 'PLAYER_CARD_DASH_DIR';
         setMessage('💨 Dash: Click a neighboring hex to choose direction.');

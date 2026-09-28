@@ -16,21 +16,21 @@ const TURN_TIME_LIMIT = 30;
 // Archetype definitions (Each class has passive/skills with max levels & descriptions)
 const ARCHETYPES = [
     {
-        id: 'dracula', name: 'Dracula', icon: '🩸',
+        id: 'dracula', name: 'Dracula', icon: '',
         skills: [
             { id: 'healOnAtk', name: 'Lifesteal', desc: 'Heal +2 HP per attack (+3 at Lvl 2, +5 at Lvl 3)', maxLvl: 3, curLvl: 1 },
             { id: 'bleed', name: 'Bleed', desc: 'Attacks inflict Bleed (1/2/3 stacks = 1/2/3 DMG per tile moved for 3 enemy turns, anti-heal 3 turns). Re-hitting refreshes 3-turn duration without adding extra stacks', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
-        id: 'angel', name: 'Angel', icon: '😇',
+        id: 'angel', name: 'Angel', icon: '',
         skills: [
-            { id: 'healAid', name: 'Heal Aid', desc: 'Heal all team dice +1 HP every 2 turns', maxLvl: 3, curLvl: 1 },
-            { id: 'revive', name: 'Revive', desc: 'Once per match: Revive destroyed team die to 15 HP (+15 per lvl)', maxLvl: 3, curLvl: 0 }
+            { id: 'healAid', name: 'Heal Aid', desc: 'Heal all team dice +1 HP every turn (+2 at Lvl 2, +3 at Lvl 3). Blocked by Bleed anti-heal', maxLvl: 3, curLvl: 1 },
+            { id: 'revive', name: 'Revive', desc: 'Once per match: Revive a destroyed teammate to 15 HP (+15 per lvl). The Angel must be alive', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
-        id: 'ninja', name: 'Ninja', icon: '🥷',
+        id: 'ninja', name: 'Ninja', icon: '',
         skills: [
             { id: 'momentum', name: 'Momentum', desc: 'Passive: Deals +1 extra damage per remaining move after attacking (Max +5 DMG bonus)', maxLvl: 1, curLvl: 1 },
             { id: 'flash', name: 'Flash Movement', desc: '+1 movement cap (+2 at Lvl 2, +4 at Lvl 3)', maxLvl: 3, curLvl: 0 },
@@ -38,7 +38,7 @@ const ARCHETYPES = [
         ]
     },
     {
-        id: 'samurai', name: 'Samurai', icon: '🗡️',
+        id: 'samurai', name: 'Samurai', icon: '',
         skills: [
             { id: 'dashMastery', name: 'Dash Mastery', desc: '+1 Card Slot (Max 4). Free Dash card every 10 waves & +15% Dash drop chance on event tiles', maxLvl: 1, curLvl: 1 },
             { id: 'concealMastery', name: 'Immunity Master', desc: 'Immunity effect on this die lasts +1 extra wave (+2 extra waves at Lvl 2)', maxLvl: 2, curLvl: 1 },
@@ -46,7 +46,7 @@ const ARCHETYPES = [
         ]
     },
     {
-        id: 'telekinator', name: 'Telekinator', icon: '🔮',
+        id: 'telekinator', name: 'Telekinator', icon: '',
         skills: [
             { id: 'psychic', name: 'Psychic Push', desc: 'Psychic ability (40% chance at Lvl 1, 65% at Lvl 2, 90% at Lvl 3) to push 1 enemy die to chosen empty tile at start of turn', maxLvl: 3, curLvl: 1 },
             { id: 'hypno', name: 'Hypno Steal', desc: 'Every 3 waves, 40% chance (70% at Lvl 2) to steal/destroy enemy card', maxLvl: 2, curLvl: 0 },
@@ -54,7 +54,7 @@ const ARCHETYPES = [
         ]
     },
     {
-        id: 'defender', name: 'Defender', icon: '🛡️',
+        id: 'defender', name: 'Defender', icon: '',
         skills: [
             { id: 'defenderMastery', name: 'Defender Mastery', desc: '+1 Card Slot (Max 4). Free Immunity card every 10 waves & +15% Immunity drop chance on event tiles', maxLvl: 1, curLvl: 1 },
             { id: 'thorns', name: 'Thorns', desc: 'When attacked, reflect 1 damage (3 at Lvl 2, 5 at Lvl 3) back to attacker', maxLvl: 3, curLvl: 1 },
@@ -62,28 +62,28 @@ const ARCHETYPES = [
         ]
     },
     {
-        id: 'rage', name: 'Rage', icon: '😡',
+        id: 'rage', name: 'Rage', icon: '',
         skills: [
             { id: 'backStronger', name: 'Back Stronger', desc: 'Gain +1 permanent damage for every 10 dmg taken (9 dmg at Lvl 2, 7 dmg at Lvl 3). Max +10 DMG bonus', maxLvl: 3, curLvl: 1 },
             { id: 'explode', name: 'Explode', desc: 'When destroyed, deal 8 damage (15 at Lvl 2) to ALL enemy dice', maxLvl: 2, curLvl: 0 }
         ]
     },
     {
-        id: 'necromancer', name: 'Necromancer', icon: '💀',
+        id: 'necromancer', name: 'Necromancer', icon: '',
         skills: [
             { id: 'minions', name: 'Minions', desc: 'Every 2 waves, summon 1 (2 at Lvl 2, 3 at Lvl 3) zombie lasting 2-3 waves. Zombies move 3 tiles/turn & deal 2 damage', maxLvl: 3, curLvl: 1 },
             { id: 'undead', name: 'Undead', desc: 'On death: splits into 2 playable dice (rolls 1-3) with 10 HP (20 at Lvl 2, 30 at Lvl 3) & empowers zombies with +1 (+2/+4) damage', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
-        id: 'mage', name: 'Mage', icon: '🧙',
+        id: 'mage', name: 'Mage', icon: '',
         skills: [
             { id: 'zap', name: 'Zap', desc: 'Gain +1 Zap stack every 2 waves (Max 2). Deals damage equal to hex distance to nearest enemy (+1 dmg per Lvl). Click Zap button to fire!', maxLvl: 3, curLvl: 1 },
             { id: 'focus', name: 'Focus', desc: 'If unhurt in previous wave: Zap has 35% chance (65% at Lvl 2, 99% at Lvl 3) to deal x2 CRIT damage', maxLvl: 3, curLvl: 0 }
         ]
     },
     {
-        id: 'doctor', name: 'Doctor', icon: '🩺',
+        id: 'doctor', name: 'Doctor', icon: '',
         skills: [
             { id: 'doctorMastery', name: 'Medical Mastery', desc: '+1 Card Slot (Max 4). Heal Pill card restores +5 additional HP (Total +12 HP)', maxLvl: 1, curLvl: 1 },
             { id: 'nobleSaviour', name: 'Noble Saviour', desc: 'Gain 1 free Heal Pill card every 4 waves (every 3 waves at Lvl 2)', maxLvl: 2, curLvl: 1 },
@@ -91,14 +91,14 @@ const ARCHETYPES = [
         ]
     },
     {
-        id: 'piercer', name: 'Piercer', icon: '🎯',
+        id: 'piercer', name: 'Piercer', icon: '',
         skills: [
             { id: 'tankKiller', name: 'Tank Killer', desc: 'Attacks deal extra +10% (+15% at Lvl 2, +20% at Lvl 3, +25% at Lvl 4) of target enemy HP', maxLvl: 4, curLvl: 1 },
             { id: 'pivot', name: 'Pivot Strike', desc: 'Active skill (3 wave CD): Preview & deal 8 area damage around this die (1 hex radius / 6 tiles at Lvl 1, 2 hex radius / 18 tiles at Lvl 2)', maxLvl: 2, curLvl: 0 }
         ]
     },
     {
-        id: 'archer', name: 'Archer', icon: '🏹',
+        id: 'archer', name: 'Archer', icon: '',
         skills: [
             { id: 'longShot', name: 'Long Shot Mastery', desc: 'Ranged attack (can move first!). Miss chance: 2% × distance (1% × dist at Lvl 2, 0% at Lvl 3). Ends die turn', maxLvl: 3, curLvl: 1 },
             { id: 'standstill', name: 'Standstill', desc: 'If this die did not move or get displaced in previous wave, damage increases by +2 (+4 at Lvl 2, +7 at Lvl 3)', maxLvl: 3, curLvl: 0 }
@@ -123,14 +123,15 @@ function renderCarouselBox(dieIdx) {
 
     box.style.animation = 'none';
     box.offsetHeight; // trigger reflow
-    box.style.animation = 'classSlideIn 0.3s ease-out';
+    box.style.animation = '';
 
     // Show first active skill/passive as highlighted description
     const displaySkill = arch.skills.find(s => !s.id.endsWith('Mastery')) || arch.skills[0];
 
     box.innerHTML = `
-        <div class="class-display-icon">${arch.icon}</div>
+        ${classBadge(arch.id, 'xl')}
         <div class="class-display-name">${arch.name}</div>
+        <div class="class-display-skill">${displaySkill.name}</div>
         <div class="class-display-desc">${displaySkill.desc}</div>
     `;
 }
@@ -167,20 +168,20 @@ function setupClassSelectionUI() {
 // 2. CARD DEFINITIONS
 // ==========================================================
 const CARD_DEFS = [
-    { id:'heal',     icon:'🩹', name:'Heal +7',        desc:'Restore 7 HP to one die (12 HP with Doctor)',       rarity:'common',   weight:20, target:'own-die' },
-    { id:'sprint',   icon:'👟', name:'Sprint +3',      desc:'Grant +3 movement to 1 die this turn',              rarity:'common',   weight:18, target:'own-die' },
-    { id:'dmg2',     icon:'⚔️', name:'Damage ×2',      desc:'Next attack deals double damage',                    rarity:'common',   weight:16, target:'none' },
-    { id:'freeze',   icon:'❄️', name:'Freeze',         desc:'Freeze 1 enemy die for 2 turns',                     rarity:'uncommon', weight:10, target:'enemy-die' },
-    { id:'aegis',    icon:'🛡️', name:'Aegis Shield',   desc:'Blocks up to 15 non-contact indirect damage',        rarity:'uncommon', weight:10, target:'own-die' },
-    { id:'bearTrap', icon:'🪤', name:'Bear Trap',      desc:'Place invisible trap on a hex (5 dmg + 2-wave root)', rarity:'uncommon', weight:10, target:'hex' },
-    { id:'block',    icon:'🧱', name:'Block',          desc:'Place 4 walls on empty hexes (2 rounds)',            rarity:'uncommon', weight:9,  target:'hex-4' },
-    { id:'swap',     icon:'🔀', name:'Swap',           desc:'Swap positions of 2 own dice',                       rarity:'uncommon', weight:9,  target:'own-die-2' },
-    { id:'conceal',  icon:'🔰', name:'Immunity',       desc:'Grants Immunity (untargetable) for 2 waves',         rarity:'uncommon', weight:8,  target:'own-die' },
-    { id:'cure',     icon:'🧪', name:'Cure Effect',    desc:'Cleanses all negative debuffs and heals +5 HP',      rarity:'rare',     weight:6,  target:'own-die' },
-    { id:'atkAgain', icon:'⚔️', name:'Attack Again',   desc:'Can attack again this turn (different target)',      rarity:'rare',     weight:5,  target:'none' },
-    { id:'dash',     icon:'💨', name:'Dash',           desc:'Dash across arena, enemies in path take 4+ dmg',     rarity:'rare',     weight:5,  target:'own-die-dir' },
-    { id:'clone',    icon:'🪞', name:'Clone',          desc:'Summon temporary 1-wave clone die (tank/attacker)',  rarity:'rare',     weight:4,  target:'own-die' },
-    { id:'dmg3',     icon:'🔥', name:'Damage ×3',      desc:'Next attack deals triple damage',                    rarity:'rare',     weight:4,  target:'none' },
+    { id:'heal',     icon: '', name:'Heal +7',        desc:'Restore 7 HP to one die (12 HP with Doctor)',       rarity:'common',   weight:20, target:'own-die' },
+    { id:'sprint',   icon: '', name:'Sprint +3',      desc:'Grant +3 movement to 1 die this turn',              rarity:'common',   weight:18, target:'own-die' },
+    { id:'dmg2',     icon: '', name:'Damage ×2',      desc:'Next attack deals double damage',                    rarity:'common',   weight:16, target:'none' },
+    { id:'freeze',   icon: '', name:'Freeze',         desc:'Freeze 1 enemy die for 2 turns',                     rarity:'uncommon', weight:10, target:'enemy-die' },
+    { id:'aegis',    icon: '', name:'Aegis Shield',   desc:'Blocks up to 15 non-contact indirect damage',        rarity:'uncommon', weight:10, target:'own-die' },
+    { id:'bearTrap', icon: '', name:'Bear Trap',      desc:'Place invisible trap on a hex (5 dmg + 2-wave root)', rarity:'uncommon', weight:10, target:'hex' },
+    { id:'block',    icon: '', name:'Block',          desc:'Place 4 walls on empty hexes (2 rounds)',            rarity:'uncommon', weight:9,  target:'hex-4' },
+    { id:'swap',     icon: '', name:'Swap',           desc:'Swap positions of 2 own dice',                       rarity:'uncommon', weight:9,  target:'own-die-2' },
+    { id:'conceal',  icon: '', name:'Immunity',       desc:'Grants Immunity (untargetable) for 2 waves',         rarity:'uncommon', weight:8,  target:'own-die' },
+    { id:'cure',     icon: '', name:'Cure Effect',    desc:'Cleanses all negative debuffs and heals +5 HP',      rarity:'rare',     weight:6,  target:'own-die' },
+    { id:'atkAgain', icon: '', name:'Attack Again',   desc:'Can attack again this turn (different target)',      rarity:'rare',     weight:5,  target:'none' },
+    { id:'dash',     icon: '', name:'Dash',           desc:'Dash across arena, enemies in path take 4+ dmg',     rarity:'rare',     weight:5,  target:'own-die-dir' },
+    { id:'clone',    icon: '', name:'Clone',          desc:'Summon temporary 1-wave clone die (tank/attacker)',  rarity:'rare',     weight:4,  target:'own-die' },
+    { id:'dmg3',     icon: '', name:'Damage ×3',      desc:'Next attack deals triple damage',                    rarity:'rare',     weight:4,  target:'none' },
 ];
 
 function getMaxHandSize(team) {
