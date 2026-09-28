@@ -1,7 +1,22 @@
 // ==========================================================
 // 11. ANIMATIONS & GAME LOOP / TURN CONTROLLER
 // ==========================================================
-function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+// Resolves only if the same match is still running, so async turn flows from an
+// abandoned match (Restart / Quit to Menu) stop at their next await instead of mutating the new match.
+function delay(ms) {
+    const session = game;
+    return new Promise(r => setTimeout(() => {
+        if (game === session && !session.aborted) r();
+    }, ms));
+}
+
+// setTimeout that is dropped when the match is restarted or quit
+function matchTimeout(fn, ms) {
+    const session = game;
+    return setTimeout(() => {
+        if (game === session && !session.aborted) fn();
+    }, ms);
+}
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 function easeOutQuad(t) { return t * (2 - t); }
 
@@ -110,7 +125,9 @@ async function animateMove(die, path, isForced=false) {
         if (occupant && occupant.id !== die.id && occupant.concealed) {
             const bounce = findNearestEmptyHex(die.q, die.r);
             const bounceDist = hexDist(die.q, die.r, bounce.q, bounce.r);
+            startSlide(die, die.q, die.r, 260, 0.5);
             die.q = bounce.q; die.r = bounce.r;
+            if (die.slide) { die.slide.fromQ = die.slide.fromQ; }
             die.movedThisWave = true;
             addFloatingText('🌀 Bounced!', die.q, die.r, '#a78bfa', 16);
             applyForcedMoveBleed(die, bounceDist);
@@ -162,28 +179,11 @@ function rollDice(n, isSplit=false) {
 
 async function animateRoll(team, aliveUnits) {
     const el = document.getElementById('roll-display');
-    const cls = team === 'player' ? 'player-die' : 'cpu-die';
-    const n = aliveUnits.length;
-    let finalVals;
+    const finalVals = aliveUnits.map(d => rollDiceForUnit(d));
+    if (el) el.innerHTML = `<span class="roll-pending">${team === 'player' ? 'Rolling your dice' : 'Computer is rolling'}</span>`;
     SFX.roll();
-
-    for (let f = 0; f < 12; f++) {
-        const vals = aliveUnits.map(d => rollDiceForUnit(d));
-        const total = vals.reduce((a, b) => a + b, 0);
-        if (el) {
-            el.innerHTML = `🎲 ` + vals.map(v => `<span class="roll-die-box ${cls}">${v}</span>`).join('+') +
-                ` <span class="roll-eq">=</span> <span class="roll-total">${total}</span>`;
-        }
-        await delay(60 + f * 10);
-        if (f === 11) finalVals = vals;
-    }
-
-    finalVals = aliveUnits.map(d => rollDiceForUnit(d));
-    const total = finalVals.reduce((a, b) => a + b, 0);
-    if (el) {
-        el.innerHTML = `🎲 ` + finalVals.map(v => `<span class="roll-die-box ${cls}">${v}</span>`).join('+') +
-            ` <span class="roll-eq">=</span> <span class="roll-total">${total}</span>`;
-    }
+    await playBoardRoll(finalVals, team, aliveUnits.map(d => d.archetype));
+    if (el) el.innerHTML = rollDiceHTML(finalVals, team);
     return finalVals;
 }
 
@@ -217,33 +217,40 @@ async function rollForFirst() {
         playerTotal = playerVals.reduce((a, b) => a + b, 0);
         cpuTotal = cpuVals.reduce((a, b) => a + b, 0);
 
-        const tieMsg = playerTotal === cpuTotal ? '<div style="color:var(--gold);margin-top:12px;font-weight:700;">TIE! Rolling again...</div>' : '';
         const resultMsg = playerTotal > cpuTotal ?
-            '<div class="overlay-result player-win">🟢 Player goes first!</div>' :
+            '<div class="overlay-result player-win">You move first.</div>' :
             playerTotal < cpuTotal ?
-            '<div class="overlay-result cpu-win">🔴 Computer goes first!</div>' : '';
+            '<div class="overlay-result cpu-win">The computer moves first.</div>' :
+            '<div class="overlay-result tie">Tied. Rolling again.</div>';
 
         showOverlay(`
             <div class="overlay-box">
-                <h2>⚔ Roll for First Turn! ⚔</h2>
-                ${attempts > 1 ? '<div style="color:var(--text-dim);font-size:0.85rem;margin-bottom:8px;">Attempt #' + attempts + '</div>' : ''}
+                <h2>Roll for first turn</h2>
+                <p>Highest total starts. ${attempts > 1 ? `Reroll ${attempts - 1}.` : 'Your starting dice also set your first damage.'}</p>
                 <div class="roll-compare">
                     <div class="roll-side player">
-                        <div class="label">Player</div>
-                        <div class="dice-row">${playerVals.map(v => `<div class="die-box">${v}</div>`).join('')}</div>
+                        <div class="label">You</div>
+                        <div class="dice-row" id="first-roll-player"></div>
                         <div class="total-val">${playerTotal}</div>
                     </div>
-                    <div class="vs-text">VS</div>
+                    <div class="vs-text">vs</div>
                     <div class="roll-side cpu">
                         <div class="label">Computer</div>
-                        <div class="dice-row">${cpuVals.map(v => `<div class="die-box">${v}</div>`).join('')}</div>
+                        <div class="dice-row" id="first-roll-cpu"></div>
                         <div class="total-val">${cpuTotal}</div>
                     </div>
                 </div>
-                ${resultMsg}${tieMsg}
+                <div class="first-roll-result">${resultMsg}</div>
             </div>
         `);
-        await delay(playerTotal === cpuTotal ? 1800 : 2200);
+        SFX.roll();
+        const tumbleDur = fastAutoMode ? 350 : 1000;
+        await Promise.all([
+            tumbleDice(document.getElementById('first-roll-player'), playerVals, 'player', { dur: tumbleDur, spread: 0.35, archetypes: game.playerDice.map(d => d.archetype) }),
+            tumbleDice(document.getElementById('first-roll-cpu'), cpuVals, 'cpu', { dur: tumbleDur, spread: 0.35, from: 'right', archetypes: game.cpuDice.map(d => d.archetype) }),
+        ]);
+        document.querySelectorAll('.roll-side .total-val, .first-roll-result').forEach(e => e.classList.add('shown'));
+        await delay(playerTotal === cpuTotal ? 1000 : 1300);
     } while (playerTotal === cpuTotal);
 
     // Assign initial face damage from the winning roll for match predictability!
@@ -260,10 +267,11 @@ async function rollForFirst() {
             beginPlayerTurn();
         } else {
             showOverlay(`
-                <div class="overlay-box">
-                    <h2>🟢 Your Turn First!</h2>
-                    <p style="color:var(--text-dim);margin:12px 0;">Roll dice for movement. Each die moves up to its roll value.<br>Damage = die face value (shown on board).</p>
-                    <button class="overlay-btn" onclick="hideOverlay(); beginPlayerTurn();">Let's Go!</button>
+                <div class="overlay-box" style="max-width:460px;">
+                    <div class="overlay-icon teal">${iconSVG('dice')}</div>
+                    <h2>You go first</h2>
+                    <p>Each die moves up to its roll and hits for its face value. Click a teal die to begin.</p>
+                    <div class="overlay-actions"><button class="clay-btn teal big" onclick="hideOverlay(); beginPlayerTurn();">Roll my dice</button></div>
                 </div>
             `);
         }
@@ -276,10 +284,11 @@ async function rollForFirst() {
             beginCpuTurn();
         } else {
             showOverlay(`
-                <div class="overlay-box">
-                    <h2>🔴 Computer Goes First!</h2>
-                    <p style="color:var(--text-dim);margin:12px 0;">The computer will make its move...</p>
-                    <button class="overlay-btn" onclick="hideOverlay(); beginCpuTurn();">Continue</button>
+                <div class="overlay-box" style="max-width:460px;">
+                    <div class="overlay-icon berry">${iconSVG('dice')}</div>
+                    <h2>The computer goes first</h2>
+                    <p>Watch where it moves. Your dice roll as soon as its turn ends.</p>
+                    <div class="overlay-actions"><button class="clay-btn berry big" onclick="hideOverlay(); beginCpuTurn();">Continue</button></div>
                 </div>
             `);
         }
@@ -291,6 +300,7 @@ function tickStatusEffects(team) {
     for (const d of dice) {
         if (d.frozen > 0) {
             d.frozen--;
+            if (d.frozen === 0) d.petrified = false;
             d.bleedStacks = 0;
             d.bleedTurns = 0;
         }
@@ -320,6 +330,7 @@ function tickStatusEffects(team) {
                         const actual = td.hp - prevHp;
                         totalHealedThisTurn += actual;
                         addFloatingText(`+${healLvl} 😇`, td.q, td.r, '#34d399', 16);
+                        if (actual > 0) fxHeal(td);
                     }
                 }
             });
@@ -403,25 +414,29 @@ async function tickWaveEffects() {
         }
     }
 
-    // Passive grant card every 10 waves (Samurai -> Dash, Defender -> Conceal)
+    // Passive grant card every 10 waves (Samurai -> Dash, Defender -> Immunity) for both teams
     if (game.wave % 10 === 0) {
-        const pDice = aliveDice('player');
-        const hasSamurai = pDice.some(d => getSkillLevel(d, 'dashMastery') > 0);
-        const hasDefender = pDice.some(d => getSkillLevel(d, 'defenderMastery') > 0);
-        const maxH = getMaxHandSize('player');
+        for (const team of ['player', 'cpu']) {
+            const teamDice = aliveDice(team);
+            if (teamDice.length === 0) continue;
+            const hand = team === 'player' ? game.playerHand : game.cpuHand;
+            const hasSamurai = teamDice.some(d => getSkillLevel(d, 'dashMastery') > 0);
+            const hasDefender = teamDice.some(d => getSkillLevel(d, 'defenderMastery') > 0);
+            const maxH = getMaxHandSize(team);
 
-        if (hasSamurai && game.playerHand.length < maxH) {
-            const dashCard = CARD_DEFS.find(c => c.id === 'dash');
-            if (dashCard) {
-                game.playerHand.push({ ...dashCard });
-                addFloatingText('🗡️ Free Dash!', pDice[0].q, pDice[0].r, '#c084fc', 16);
+            if (hasSamurai && hand.length < maxH) {
+                const dashCard = CARD_DEFS.find(c => c.id === 'dash');
+                if (dashCard) {
+                    hand.push({ ...dashCard });
+                    addFloatingText(team === 'player' ? '🗡️ Free Dash!' : '🔴 CPU: Free Dash!', teamDice[0].q, teamDice[0].r, '#c084fc', 16);
+                }
             }
-        }
-        if (hasDefender && game.playerHand.length < maxH) {
-            const concealCard = CARD_DEFS.find(c => c.id === 'conceal');
-            if (concealCard) {
-                game.playerHand.push({ ...concealCard });
-                addFloatingText('🔰 Free Immunity!', pDice[0].q, pDice[0].r, '#a78bfa', 16);
+            if (hasDefender && hand.length < maxH) {
+                const concealCard = CARD_DEFS.find(c => c.id === 'conceal');
+                if (concealCard) {
+                    hand.push({ ...concealCard });
+                    addFloatingText(team === 'player' ? '🔰 Free Immunity!' : '🔴 CPU: Free Immunity!', teamDice[0].q, teamDice[0].r, '#a78bfa', 16);
+                }
             }
         }
         updateCardHand();
@@ -445,7 +460,9 @@ async function tickWaveEffects() {
                 for (let i = 0; i < count; i++) {
                     const emptyHex = findNearestEmptyHex(d.q, d.r);
                     const wavesLeft = Math.floor(Math.random() * 2) + 2; // 2 to 3 waves
+                    spawnParticles(hexScreen(emptyHex.q, emptyHex.r).x, hexScreen(emptyHex.q, emptyHex.r).y + HEX_SIZE * 0.2, '#7F5A38', 12, 2, 700, 3);
                     game.zombies.push({
+                        bornAt: performance.now() + i * 150,
                         id: Math.random(),
                         q: emptyHex.q,
                         r: emptyHex.r,
@@ -460,15 +477,23 @@ async function tickWaveEffects() {
         }
     }
 
+    // Telekinator Hypno Steal (both teams): steal an enemy card, or destroy it if own hand is full
     if (game.wave % 3 === 0) {
-        for (const d of aliveDice('player')) {
+        for (const d of [...aliveDice('player'), ...aliveDice('cpu')]) {
             const hypnoLvl = getSkillLevel(d, 'hypno');
             if (hypnoLvl > 0 && d.frozen === 0) {
                 const chance = hypnoLvl === 1 ? 0.4 : 0.7;
-                if (Math.random() < chance) {
-                    if (game.cpuHand.length > 0) game.cpuHand.pop();
-                    if (game.playerHand.length < getMaxHandSize('player')) game.playerHand.push(randomCard('player'));
-                    addFloatingText('🔮 Hypno Steal!', d.q, d.r, '#c084fc', 18);
+                const ownHand = d.team === 'player' ? game.playerHand : game.cpuHand;
+                const enemyHand = d.team === 'player' ? game.cpuHand : game.playerHand;
+                if (enemyHand.length > 0 && Math.random() < chance) {
+                    const [stolen] = enemyHand.splice(Math.floor(Math.random() * enemyHand.length), 1);
+                    if (ownHand.length < getMaxHandSize(d.team)) {
+                        ownHand.push(stolen);
+                        addFloatingText(`🔮 Hypno Steal: ${stolen.name}!`, d.q, d.r, '#c084fc', 18);
+                    } else {
+                        addFloatingText(`🔮 Hypno Destroyed: ${stolen.name}!`, d.q, d.r, '#c084fc', 18);
+                    }
+                    addCombatLog(`${d.icon} ${d.id.toUpperCase()} Hypno ${ownHand.includes(stolen) ? 'stole' : 'destroyed'} an enemy ${stolen.name} card!`, '🔮', '#c084fc');
                     updateCardHand();
                 }
             }
@@ -554,6 +579,9 @@ async function tickWaveEffects() {
 }
 
 async function handleTurnEndSequence(finishedTeam) {
+    // Guard against double turn-end (e.g. skill callback + end-of-turn flow, or timer racing an action)
+    if (game.phase === 'GAME_OVER' || game.turnEnding || game.currentTurn !== finishedTeam) return;
+    game.turnEnding = true;
     stopTurnTimer();
     game.turnsInCurrentWave++;
 
@@ -608,20 +636,16 @@ async function executeZapSkill(mageDie) {
         }
     }
 
-    // Apply indirect damage with Aegis protection
-    const actualDmg = applyIndirectDamage(nearestEnemy, zapDmg, isCrit ? '⚡💥 CRIT ZAP' : '⚡ ZAP', '#c084fc');
-
-    // Track in stats and die
-    mageDie.totalDamageDealt = (mageDie.totalDamageDealt || 0) + actualDmg;
-    if (mageDie.team === 'player' && game.stats && actualDmg > 0) {
-        game.stats.damageDealt[mageDie.id] = (game.stats.damageDealt[mageDie.id] || 0) + actualDmg;
-        game.stats.damageDealt.total += actualDmg;
-        updateStatsDisplay();
-    }
-
     SFX.attack();
     const p = hexToPixel(nearestEnemy.q, nearestEnemy.r);
     spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#a855f7', 20, 3, 700);
+
+    // Apply indirect damage with Aegis protection
+    fxBolt(mageDie, nearestEnemy);
+    if (isCrit) fxImpact(nearestEnemy, '#E7DDFF', true);
+    await delay(170);
+    const actualDmg = applyIndirectDamage(nearestEnemy, zapDmg, isCrit ? '⚡💥 CRIT ZAP' : '⚡ ZAP', '#c084fc');
+    creditDamageDealt(mageDie, actualDmg);
 
     updateDiceHP();
     updateSkillButtons();
@@ -632,14 +656,34 @@ async function executeZapSkill(mageDie) {
 async function triggerPlayerMageZap() {
     if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
     const playerMage = aliveDice('player').find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
-    if (!playerMage || (playerMage.zapStacks || 0) <= 0) return;
+    if (!playerMage || (playerMage.zapStacks || 0) <= 0 || !canUseActiveSkill(playerMage)) return;
 
+    game.phase = 'PLAYER_ANIMATING';
     await executeZapSkill(playerMage);
+    if (game.phase !== 'GAME_OVER') { game.phase = 'PLAYER_TURN'; updateSkillButtons(); }
+}
+
+// Frozen or rooted dice cannot use active skills
+function canUseActiveSkill(die) {
+    return !!die && die.hp > 0 && die.frozen === 0 && die.trapped === 0;
+}
+
+// After a player skill that may consume the last moves: end the turn or return control
+function finishPlayerSkillAction() {
+    if (game.phase === 'GAME_OVER') return;
+    game.phase = 'PLAYER_TURN';
+    if (totalMovesLeft('player') <= 0) {
+        setButtons(false, false);
+        matchTimeout(() => handleTurnEndSequence('player'), 600);
+    } else {
+        setButtons(true, false);
+    }
 }
 
 // Archer Long Shot Mastery: Ranged attack (can move first!)
 async function executeArcherLongShot(archerDie, targetEnemy) {
-    if (!archerDie || !targetEnemy || archerDie.hasAttackedThisTurn) return false;
+    if (!archerDie || !targetEnemy || archerDie.hasAttackedThisTurn || !canUseActiveSkill(archerDie)) return false;
+    if (targetEnemy.hp <= 0 || targetEnemy.concealed) return false;
     const longShotLvl = getSkillLevel(archerDie, 'longShot');
     if (longShotLvl <= 0) return false;
 
@@ -654,38 +698,34 @@ async function executeArcherLongShot(archerDie, targetEnemy) {
         game.parents = null;
     }
     SFX.dash();
+    const travel = 240 + dist * 35;
+    fxArrow(archerDie, targetEnemy, travel);
+    await delay(travel);
 
     if (Math.random() < missRate) {
         addFloatingText(`🏹 Missed! (${Math.round(missRate * 100)}%)`, targetEnemy.q, targetEnemy.r, '#94a3b8', 18);
         addCombatLog(`${archerDie.icon} ${archerDie.id.toUpperCase()} Long Shot missed ${targetEnemy.icon} ${targetEnemy.id.toUpperCase()} (${Math.round(missRate * 100)}% miss)!`, '🏹', '#94a3b8');
     } else {
         const effDmg = getDieEffectiveDamage(archerDie);
-        const actualDmg = applyIndirectDamage(targetEnemy, effDmg, '🏹 Long Shot', '#38bdf8');
         SFX.attack();
         const p = hexToPixel(targetEnemy.q, targetEnemy.r);
         spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#38bdf8', 18, 3, 700);
+        addCombatLog(`${archerDie.icon} ${archerDie.id.toUpperCase()} Long Shot hit ${targetEnemy.icon} ${targetEnemy.id.toUpperCase()} (${effDmg} DMG before shields)!`, '🏹', '#38bdf8');
 
-        archerDie.totalDamageDealt = (archerDie.totalDamageDealt || 0) + actualDmg;
-        if (archerDie.team === 'player' && game.stats && actualDmg > 0) {
-            game.stats.damageDealt[archerDie.id] = (game.stats.damageDealt[archerDie.id] || 0) + actualDmg;
-            game.stats.damageDealt.total += actualDmg;
-            updateStatsDisplay();
-        }
-        addCombatLog(`${archerDie.icon} ${archerDie.id.toUpperCase()} Long Shot hit ${targetEnemy.icon} ${targetEnemy.id.toUpperCase()} for ${actualDmg} DMG!`, '🏹', '#38bdf8');
+        const actualDmg = applyIndirectDamage(targetEnemy, effDmg, '🏹 Long Shot', '#38bdf8');
+        creditDamageDealt(archerDie, actualDmg);
     }
 
+    // Turn ending is handled by the caller (player target handler / CPU turn loop)
     updateDiceHP();
     updateSkillButtons();
-    if (checkWin()) return true;
-    if (totalMovesLeft(archerDie.team) <= 0) {
-        setTimeout(() => handleTurnEndSequence(archerDie.team), 600);
-    }
+    checkWin();
     return true;
 }
 
 function triggerPlayerArcherShot() {
     if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
-    const archer = aliveDice('player').find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0) && !d.hasAttackedThisTurn);
+    const archer = aliveDice('player').find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0) && !d.hasAttackedThisTurn && canUseActiveSkill(d));
     if (!archer) return;
 
     game.selectedDie = null;
@@ -697,21 +737,24 @@ function triggerPlayerArcherShot() {
     setButtons(false, false);
 }
 
-// Piercer Pivot Strike: Deals 8 damage in an area (2 sides Lvl 1, 3 sides Lvl 2, all sides Lvl 3)
+// Piercer Pivot Strike: Deals 8 area damage (1 hex radius at Lvl 1, 2 hex radius at Lvl 2)
 async function executePiercerPivot(piercerDie) {
-    if (!piercerDie || piercerDie.hasAttackedThisTurn) return false;
+    if (!piercerDie || piercerDie.hasAttackedThisTurn || !canUseActiveSkill(piercerDie)) return false;
     const pivotLvl = getSkillLevel(piercerDie, 'pivot');
     if (pivotLvl <= 0) return false;
 
     piercerDie.hasAttackedThisTurn = true;
     piercerDie.moveAllowance = 0;
-    game.pivotUsedWave = game.wave;
+    setCooldownWave('pivotUsedWave', piercerDie.team);
     game.pivotPreview = false;
     game.pivotPiercer = null;
 
     const enemyTeam = piercerDie.team === 'player' ? 'cpu' : 'player';
     const hitHexes = typeof getPivotHexes === 'function' ? getPivotHexes(piercerDie.q, piercerDie.r, pivotLvl) : [];
     const hitEnemies = aliveDice(enemyTeam).filter(d => !d.concealed && hitHexes.some(n => n.q === d.q && n.r === d.r));
+    if (piercerDie.team === 'player') game.phase = 'PLAYER_ANIMATING';
+    fxSweep(piercerDie, pivotLvl >= 2 ? 2 : 1);
+    await delay(260);
 
     SFX.attack();
     const p = hexToPixel(piercerDie.q, piercerDie.r);
@@ -722,88 +765,29 @@ async function executePiercerPivot(piercerDie) {
         addCombatLog(`${piercerDie.icon} ${piercerDie.id.toUpperCase()} swung Pivot Strike, but no enemies were in range.`, '🎯', '#f59e0b');
     } else {
         for (const target of hitEnemies) {
-            const toughLvl = getSkillLevel(target, 'toughness');
-            const toughRed = toughLvl === 1 ? 3 : toughLvl === 2 ? 5 : toughLvl === 3 ? 7 : 0;
-            let dmg = Math.max(1, 8 - toughRed);
+            if (target.hp <= 0) continue; // may have died from a chained Explode
+            let dmg = Math.max(1, 8 - getToughnessReduction(target));
             if (target.halfDamage > 0) dmg = Math.ceil(dmg / 2);
 
-            target.hp -= dmg;
-            target.totalDamageTaken = (target.totalDamageTaken || 0) + dmg;
-            target.damagedThisWave = true;
-
-            piercerDie.totalDamageDealt = (piercerDie.totalDamageDealt || 0) + dmg;
-            if (piercerDie.team === 'player' && game.stats) {
-                game.stats.damageDealt[piercerDie.id] = (game.stats.damageDealt[piercerDie.id] || 0) + dmg;
-                game.stats.damageDealt.total += dmg;
-                updateStatsDisplay();
-            }
-
-            addFloatingText(`-${dmg} 🎯 Pivot!`, target.q, target.r, '#f59e0b', 20);
             addCombatLog(`${piercerDie.icon} ${piercerDie.id.toUpperCase()} Pivot Strike hit ${target.icon} ${target.id.toUpperCase()} for ${dmg} DMG!`, '🎯', '#f59e0b');
             const ep = hexToPixel(target.q, target.r);
             spawnParticles(ep.x + gridCenterX, ep.y + gridCenterY, '#f59e0b', 15, 2, 600);
-
-            if (target.hp <= 0) {
-                target.hp = 0;
-                addFloatingText('💀 DESTROYED!', target.q, target.r + 0.5, '#ff2244', 16);
-                addCombatLog(`💀 ${target.icon} ${target.id.toUpperCase()} was destroyed by Pivot Strike!`, '💀', '#ef4444');
-                SFX.destroy();
-
-                const explodeLvl = getSkillLevel(target, 'explode');
-                if (explodeLvl > 0) {
-                    const expDmg = explodeLvl === 1 ? 8 : 15;
-                    addFloatingText(`💥 EXPLODE -${expDmg}!`, target.q, target.r, '#ef4444', 24);
-                    SFX.destroy();
-                    aliveDice(piercerDie.team).forEach(pd => {
-                        pd.hp -= expDmg;
-                        pd.totalDamageTaken = (pd.totalDamageTaken || 0) + expDmg;
-                        pd.damagedThisWave = true;
-                        if (pd.hp < 0) pd.hp = 0;
-                        addFloatingText(`-${expDmg} 💥`, pd.q, pd.r, '#ef4444', 20);
-                    });
-                }
-
-                const didSplit = handleUndeadSplit(target);
-                if (!didSplit && target.team === 'cpu') {
-                    for (const teamDie of game.cpuDice) {
-                        const revLvl = getSkillLevel(teamDie, 'revive');
-                        if (revLvl > 0 && !target.revived) {
-                            const healAmount = revLvl * 15;
-                            target.hp = healAmount;
-                            target.revived = true;
-                            teamDie.totalHealDone = (teamDie.totalHealDone || 0) + healAmount;
-                            if (teamDie.team === 'player' && game.stats) {
-                                game.stats.healDone[teamDie.id] = (game.stats.healDone[teamDie.id] || 0) + healAmount;
-                                game.stats.healDone.total += healAmount;
-                                updateStatsDisplay();
-                            }
-                            const emptyHex = findNearestEmptyHex(target.q, target.r);
-                            target.q = emptyHex.q; target.r = emptyHex.r;
-                            target.movedThisWave = true;
-                            addFloatingText(`😇 REVIVED (${target.hp} HP)!`, target.q, target.r, '#fbbf24', 20);
-                            SFX.heal();
-                            break;
-                        }
-                    }
-                }
-            }
+            dealDirectDamage(target, dmg, piercerDie, '🎯 Pivot!', '#f59e0b');
         }
     }
 
+    // Turn ending is handled by the caller (player pivot handlers / CPU turn loop)
     updateDiceHP();
     updateSkillButtons();
-    if (checkWin()) return true;
-    if (totalMovesLeft(piercerDie.team) <= 0) {
-        setTimeout(() => handleTurnEndSequence(piercerDie.team), 600);
-    }
+    checkWin();
     return true;
 }
 
-function triggerPlayerPiercerPivot() {
+async function triggerPlayerPiercerPivot() {
     if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
-    const piercer = aliveDice('player').find(d => (d.archetype === 'piercer' || getSkillLevel(d, 'pivot') > 0) && !d.hasAttackedThisTurn);
-    if (!piercer || getSkillLevel(piercer, 'pivot') <= 0) return;
-    const isPivotReady = (game.wave - (game.pivotUsedWave || -99)) >= 3;
+    const piercer = aliveDice('player').find(d => getSkillLevel(d, 'pivot') > 0 && !d.hasAttackedThisTurn && canUseActiveSkill(d));
+    if (!piercer) return;
+    const isPivotReady = (game.wave - getCooldownWave('pivotUsedWave', 'player')) >= 3;
     if (!isPivotReady) return;
 
     if (!game.pivotPreview) {
@@ -813,7 +797,8 @@ function triggerPlayerPiercerPivot() {
         updateSkillButtons();
     } else {
         game.pivotPreview = false;
-        executePiercerPivot(piercer);
+        await executePiercerPivot(piercer);
+        finishPlayerSkillAction();
     }
 }
 
@@ -829,10 +814,10 @@ function cancelPivotPreview() {
 // Telekinator Mind Control: Active skill every 5 waves (claims enemy die for 2 waves)
 function triggerPlayerMindControl() {
     if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
-    const tele = aliveDice('player').find(d => d.archetype === 'telekinator' || getSkillLevel(d, 'mindControl') > 0);
-    if (!tele || getSkillLevel(tele, 'mindControl') <= 0) return;
-    const isMindReady = (game.wave - (game.mindControlUsedWave || -99)) >= 5;
-    if (!isMindReady || tele.frozen > 0 || tele.trapped > 0) return;
+    const tele = aliveDice('player').find(d => getSkillLevel(d, 'mindControl') > 0 && canUseActiveSkill(d));
+    if (!tele) return;
+    const isMindReady = (game.wave - getCooldownWave('mindControlUsedWave', 'player')) >= 5;
+    if (!isMindReady) return;
 
     if (aliveDice('cpu').length <= 1) {
         addFloatingText('🚫 Need >1 Enemy!', tele.q, tele.r, '#ef4444', 18);
@@ -847,8 +832,10 @@ function triggerPlayerMindControl() {
 }
 
 async function beginPlayerTurn() {
+    if (game.phase === 'GAME_OVER') return;
     game.phase = 'PLAYER_ROLL';
     game.currentTurn = 'player';
+    game.turnEnding = false;
     game.selectedDie = null;
     game.reachable = null;
     game.parents = null;
@@ -906,6 +893,19 @@ async function beginPlayerTurn() {
                 await delay(700);
                 game.psychicSource = teleDie;
                 game.phase = 'PLAYER_PSYCHIC_ENEMY';
+
+                // Fast Auto bot resolves the push itself instead of waiting for clicks
+                if (fastAutoMode) {
+                    const victim = cpuAlive[Math.floor(Math.random() * cpuAlive.length)];
+                    handlePsychicEnemySelect(victim.q, victim.r);
+                    const empties = allHexes.filter(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r));
+                    const tile = empties[Math.floor(Math.random() * empties.length)];
+                    if (tile) await handlePsychicTileSelect(tile.q, tile.r);
+                    if (game.phase === 'PLAYER_PSYCHIC_TILE' || game.phase === 'PLAYER_PSYCHIC_ENEMY') game.phase = 'PLAYER_TURN';
+                    if (game.phase === 'PLAYER_TURN') matchTimeout(playerAutoBotTurn, 200);
+                    return;
+                }
+
                 setMessage(`🔮 PSYCHIC ACTIVE: Choose enemy die to move! (${Math.round(chance * 100)}% Success)`);
                 setButtons(false, false);
                 return;
@@ -916,25 +916,25 @@ async function beginPlayerTurn() {
     }
 
     game.phase = 'PLAYER_TURN';
-    setMessage(`Your turn! Click a green die to move.`);
+    setMessage(`Your turn. Pick one of your dice to move.`);
     setButtons(true, false);
 
     if (fastAutoMode) {
-        setTimeout(playerAutoBotTurn, 200);
+        matchTimeout(playerAutoBotTurn, 200);
     }
 }
 
 function selectDie(die) {
     if (die.frozen > 0) {
-        setMessage(`Die D${die.id} is frozen! ❄️ (${die.frozen} turn${die.frozen>1?'s':''} left)`);
+        setMessage(`${archName(die.archetype)} is frozen for ${die.frozen} more turn${die.frozen>1?'s':''}.`);
         return;
     }
     if (die.trapped > 0) {
-        setMessage(`Die D${die.id} is trapped in vines! 🌿 (${die.trapped} wave${die.trapped>1?'s':''} left)`);
+        setMessage(`${archName(die.archetype)} is rooted for ${die.trapped} more turn${die.trapped>1?'s':''}.`);
         return;
     }
     if (die.moveAllowance <= 0) {
-        setMessage(`Die D${die.id} has no moves left.`);
+        setMessage(`${archName(die.archetype)} has no moves left. Pick another die.`);
         return;
     }
 
@@ -944,7 +944,7 @@ function selectDie(die) {
     game.parents = parents;
 
     if (reachable.size === 0) {
-        setMessage(`Die D${die.id} has no valid moves. Try another.`);
+        setMessage(`${archName(die.archetype)} is boxed in. Pick another die.`);
         game.selectedDie = null;
         game.reachable = null;
         game.parents = null;
@@ -954,7 +954,7 @@ function selectDie(die) {
 
     const attacks = [...reachable.values()].filter(v => v.isAttack);
     const effDmg = getDieEffectiveDamage(die);
-    setMessage(`D${die.id} [DMG:${effDmg}${die.damageMultiplier>1?'×'+die.damageMultiplier:''}] selected. ${die.moveAllowance} moves. ${attacks.length ? attacks.length + ' target(s).' : ''}`);
+    setMessage(`${archName(die.archetype)}: ${die.moveAllowance} ${die.moveAllowance === 1 ? 'move' : 'moves'}, hits for ${effDmg}${die.damageMultiplier>1?' ×'+die.damageMultiplier:''}. ${attacks.length ? `${attacks.length} enemy in reach.` : 'Click a lit tile to move.'}`);
     setButtons(true, true);
 }
 
@@ -966,7 +966,7 @@ function deselectDie() {
     game.selectedDie = null;
     game.reachable = null;
     game.parents = null;
-    setMessage(`Select a green die to move.`);
+    setMessage(`Pick one of your dice to move.`);
     setButtons(true, false);
 }
 
@@ -977,30 +977,249 @@ function handleUndeadSplit(deadDie) {
         deadDie.undeadTriggered = true;
         const splitHp = undeadLvl === 1 ? 10 : undeadLvl === 2 ? 20 : 30;
 
-        // Create 2 split dice
+        // Create 2 split dice (place the first before searching for the second so they never share a hex)
         const teamDiceArray = deadDie.team === 'player' ? game.playerDice : game.cpuDice;
-        const empty1 = findNearestEmptyHex(deadDie.q, deadDie.r);
-        const empty2 = findNearestEmptyHex(empty1.q, empty1.r);
-
-        const subDie1 = createDie(`${deadDie.id}_a`, empty1.q, empty1.r, deadDie.team, 'necromancer', true);
-        const subDie2 = createDie(`${deadDie.id}_b`, empty2.q, empty2.r, deadDie.team, 'necromancer', true);
-
-        subDie1.hp = splitHp;
-        subDie1.maxHp = splitHp;
-        subDie2.hp = splitHp;
-        subDie2.maxHp = splitHp;
-        subDie1.skills = JSON.parse(JSON.stringify(deadDie.skills));
-        subDie2.skills = JSON.parse(JSON.stringify(deadDie.skills));
-        subDie1.undeadTriggered = true;
-        subDie2.undeadTriggered = true;
-
-        teamDiceArray.push(subDie1, subDie2);
+        const makeSplit = (suffix, hex) => {
+            const sub = createDie(`${deadDie.id}_${suffix}`, hex.q, hex.r, deadDie.team, 'necromancer', true);
+            sub.hp = splitHp;
+            sub.maxHp = splitHp;
+            sub.skills = JSON.parse(JSON.stringify(deadDie.skills));
+            sub.undeadTriggered = true;
+            teamDiceArray.push(sub);
+            return sub;
+        };
+        const sub1 = makeSplit('a', findNearestEmptyHex(deadDie.q, deadDie.r));
+        makeSplit('b', findNearestEmptyHex(sub1.q, sub1.r));
 
         addFloatingText(`💀 UNDEAD SPLIT! (${splitHp} HP each)`, deadDie.q, deadDie.r, '#10b981', 20);
+        { const p = dieFxPos(deadDie); spawnParticles(p.x, p.y, '#B8F28A', 22, 3, 900, 3); fxRing(p.x, p.y + HEX_SIZE * 0.3, '#B8F28A', HEX_SIZE * 1.8, 700, 5); }
+        addCombatLog(`💀 ${deadDie.icon} ${deadDie.id.toUpperCase()} split into 2 Undead dice (${splitHp} HP each)!`, '💀', '#10b981');
         SFX.powerUp();
         return true;
     }
     return false;
+}
+
+// Angel Revive: once per match per Angel, a living Angel revives a destroyed teammate
+function tryAngelRevive(deadDie) {
+    if (deadDie.isCloneDie) return false;
+    const angel = aliveDice(deadDie.team).find(td => td !== deadDie && getSkillLevel(td, 'revive') > 0 && !td.reviveUsed);
+    if (!angel) return false;
+
+    const healAmount = getSkillLevel(angel, 'revive') * 15;
+    angel.reviveUsed = true;
+    deadDie.hp = Math.min(deadDie.maxHp || healAmount, healAmount);
+    deadDie.revived = true;
+    deadDie._deathHandled = false;
+    angel.totalHealDone = (angel.totalHealDone || 0) + deadDie.hp;
+    if (angel.team === 'player' && game.stats) {
+        game.stats.healDone[angel.id] = (game.stats.healDone[angel.id] || 0) + deadDie.hp;
+        game.stats.healDone.total += deadDie.hp;
+        updateStatsDisplay();
+    }
+
+    // Move off the hex if something else stands on it (e.g. the attacker that stepped in)
+    const occupant = allDice().find(d => d !== deadDie && d.hp > 0 && d.q === deadDie.q && d.r === deadDie.r);
+    if (occupant) {
+        const emptyHex = findNearestEmptyHex(deadDie.q, deadDie.r);
+        startSlide(deadDie, deadDie.q, deadDie.r, 380, 0.6);
+        deadDie.q = emptyHex.q;
+        deadDie.r = emptyHex.r;
+        deadDie.movedThisWave = true;
+    }
+    fxLevelUp(deadDie);
+    addFloatingText(`😇 REVIVED (${deadDie.hp} HP)!`, deadDie.q, deadDie.r, '#fbbf24', 20);
+    addCombatLog(`😇 ${angel.icon} ${angel.id.toUpperCase()} revived ${deadDie.icon} ${deadDie.id.toUpperCase()} with ${deadDie.hp} HP!`, '😇', '#fbbf24');
+    SFX.heal();
+    return true;
+}
+
+// Central on-death handler for every damage source: Rage Explode, Necromancer Undead split, Angel Revive
+function handleDieDeath(die) {
+    if (!die || die.hp > 0 || die._deathHandled) return;
+    die.hp = 0;
+    die._deathHandled = true;
+    die.moveAllowance = 0;
+
+    addFloatingText('💀 DESTROYED!', die.q, die.r + 0.5, '#ff2244', 16);
+    fxShatter(die);
+    addCombatLog(`💀 ${die.icon} ${die.id.toUpperCase()} was destroyed!`, '💀', '#ef4444');
+    SFX.destroy();
+    if (game.selectedDie === die) {
+        game.selectedDie = null;
+        game.reachable = null;
+        game.parents = null;
+    }
+
+    // Rage Explode: damage every die of the opposing team
+    const explodeLvl = getSkillLevel(die, 'explode');
+    if (explodeLvl > 0) {
+        const expDmg = explodeLvl === 1 ? 8 : 15;
+        const enemyTeam = die.team === 'player' ? 'cpu' : 'player';
+        addFloatingText(`💥 EXPLODE -${expDmg}!`, die.q, die.r, '#ef4444', 24);
+        fxExplosion(die);
+        addCombatLog(`💥 ${die.icon} ${die.id.toUpperCase()} exploded for ${expDmg} DMG to all enemy dice!`, '💥', '#ef4444');
+        for (const target of aliveDice(enemyTeam)) {
+            dealDirectDamage(target, expDmg, die, '💥', '#ef4444');
+        }
+    }
+
+    if (die.isCloneDie) return;
+    if (handleUndeadSplit(die)) return;
+    tryAngelRevive(die);
+}
+
+// Shared melee resolution for player & CPU once the attacker has stepped onto the enemy hex
+function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
+    let rawDamage = getDieEffectiveDamage(die) * die.damageMultiplier;
+
+    // Ninja Momentum Passive (+1 DMG per remaining move after attacking, max +5 DMG)
+    if (getSkillLevel(die, 'momentum') > 0 || die.archetype === 'ninja') {
+        const ninjaBonus = Math.min(5, Math.max(0, die.moveAllowance - info.dist));
+        if (ninjaBonus > 0) {
+            rawDamage += ninjaBonus;
+            addFloatingText(`🥷 +${ninjaBonus} Momentum DMG!`, die.q, die.r, '#60a5fa', 16);
+        }
+    }
+
+    // Piercer Tank Killer (+10%/15%/20%/25% of target enemy HP)
+    const tankKillerLvl = getSkillLevel(die, 'tankKiller');
+    if (tankKillerLvl > 0) {
+        const pct = tankKillerLvl === 1 ? 0.10 : tankKillerLvl === 2 ? 0.15 : tankKillerLvl === 3 ? 0.20 : 0.25;
+        const tankBonus = Math.max(1, Math.round(enemyDie.hp * pct));
+        rawDamage += tankBonus;
+        addFloatingText(`🎯 Tank Killer +${tankBonus} DMG!`, die.q, die.r, '#f59e0b', 16);
+    }
+
+    rawDamage = Math.max(1, rawDamage - getToughnessReduction(enemyDie));
+    const damage = enemyDie.halfDamage > 0 ? Math.ceil(rawDamage / 2) : rawDamage;
+    const teamTag = die.team === 'cpu' ? '🔴 CPU ' : '';
+
+    die.hasAttackedThisTurn = true;
+    SFX.attack();
+    addFloatingText(`-${damage}`, tq, tr, '#ff4466', 22);
+    if (die.damageMultiplier > 1) addFloatingText(`×${die.damageMultiplier}!`, tq, tr - 0.4, '#f59e0b', 14);
+    addCombatLog(`${teamTag}${die.icon} ${die.id.toUpperCase()} attacked ${enemyDie.icon} ${enemyDie.id.toUpperCase()} for ${damage} DMG!`, '⚔️', '#ff4466');
+    const p = hexToPixel(tq, tr);
+    spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#ff4466', 15, 3, 600, 3);
+
+    const attackedId = enemyDie.id;
+    const thornsLvl = getSkillLevel(enemyDie, 'thorns');
+    dealDirectDamage(enemyDie, damage, die);
+    fxImpact(enemyDie, '#FFF1C9', damage >= 10);
+    if (damage >= 12 && typeof shakeBoard === 'function') shakeBoard(260);
+
+    // Defender Thorns reflect on attacker: 1 / 3 / 5
+    if (thornsLvl > 0) {
+        const reflectDmg = thornsLvl === 1 ? 1 : thornsLvl === 2 ? 3 : 5;
+        dealDirectDamage(die, reflectDmg, enemyDie, '🛡️ Thorns', '#a8a29e');
+    }
+
+    // Dracula Lifesteal (only while the attacker is still alive)
+    const healLvl = getSkillLevel(die, 'healOnAtk');
+    if (healLvl > 0 && die.hp > 0) {
+        if (die.antiHealTurns > 0) {
+            addFloatingText(`🚫 Anti-Healed!`, die.q, die.r, '#ef4444', 14);
+        } else {
+            const healAmt = healLvl === 1 ? 2 : healLvl === 2 ? 3 : 5;
+            const prevHp = die.hp;
+            die.hp = Math.min(die.maxHp || MAX_HP, die.hp + healAmt);
+            const actualHeal = die.hp - prevHp;
+            die.totalHealDone = (die.totalHealDone || 0) + actualHeal;
+            if (die.team === 'player' && game.stats && actualHeal > 0) {
+                game.stats.healDone[die.id] = (game.stats.healDone[die.id] || 0) + actualHeal;
+                game.stats.healDone.total += actualHeal;
+                updateStatsDisplay();
+            }
+            addFloatingText(`+${healAmt} 🩸`, die.q, die.r, '#34d399', 16);
+            fxHeal(die);
+        }
+    }
+
+    // Dracula Bleed: refresh 3-turn duration; upgrade stacks if this attacker's level is higher
+    const bleedLvl = getSkillLevel(die, 'bleed');
+    if (bleedLvl > 0 && enemyDie.hp > 0) {
+        const stacksToAdd = Math.min(3, bleedLvl);
+        const wasBleeding = enemyDie.bleedTurns > 0 || enemyDie.bleedStacks > 0;
+        enemyDie.bleedStacks = wasBleeding ? Math.min(3, Math.max(enemyDie.bleedStacks || 1, stacksToAdd)) : stacksToAdd;
+        enemyDie.bleedSourceDieId = die.id;
+        enemyDie.bleedSourceTeam = die.team;
+        enemyDie.bleedTurns = 3;
+        enemyDie.antiHealTurns = 3;
+        { const p = dieFxPos(enemyDie); spawnParticles(p.x, p.y, '#B5304F', 10, 2, 700, 2.5); }
+        if (wasBleeding) {
+            addFloatingText(`🩸 Bleed Refreshed (${enemyDie.bleedStacks} stacks, 3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
+            addCombatLog(`${teamTag}${die.icon} ${die.id.toUpperCase()} refreshed Bleed duration (3 turns, ${enemyDie.bleedStacks} stacks) on ${enemyDie.icon} ${enemyDie.id.toUpperCase()}!`, '🩸', '#ef4444');
+        } else {
+            addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks} (3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
+            addCombatLog(`${teamTag}${die.icon} ${die.id.toUpperCase()} inflicted Bleed x${enemyDie.bleedStacks} on ${enemyDie.icon} ${enemyDie.id.toUpperCase()} (3 turns)!`, '🩸', '#ef4444');
+        }
+    }
+
+    // Surviving defender (not revived elsewhere) is knocked back to the attacker's previous hex
+    if (enemyDie.hp > 0 && die.hp > 0 && enemyDie.q === tq && enemyDie.r === tr) {
+        enemyDie.q = prevQ; enemyDie.r = prevR;
+        startSlide(enemyDie, tq, tr, 300, 0.35);
+        enemyDie.movedThisWave = true;
+        triggerTileEffectOnDie(enemyDie);
+        triggerTileEffectOnDie(die);
+    }
+
+    die.damageMultiplier = 1;
+    die.moveAllowance = Math.max(0, die.moveAllowance - info.dist);
+    if (die.hp <= 0) die.moveAllowance = 0;
+
+    const quickLvl = getSkillLevel(die, 'quickDestruct');
+    const quickChance = quickLvl === 1 ? 0.25 : quickLvl === 2 ? 0.35 : quickLvl === 3 ? 0.50 : 0;
+    if (quickLvl > 0 && die.moveAllowance > 0 && Math.random() < quickChance) {
+        die.attackAgainActive = true;
+        addFloatingText('🥷 Quick Destruct!', die.q, die.r, '#60a5fa', 18);
+    }
+
+    if (die.attackAgainActive && die.moveAllowance > 0) {
+        die.attackAgainActive = false;
+        die.lastAttackedEnemyId = attackedId;
+    } else {
+        die.moveAllowance = 0;
+    }
+}
+
+// Walks the attacker up to the enemy and strikes. Returns false if the approach was interrupted
+// (trap / vine root, death by bleed or hazard, bounce, target gone) so no "teleport" attack happens.
+async function performMeleeAttack(die, path, info, tq, tr) {
+    const movePath = path.slice(0, -1);
+    if (movePath.length > 1) await animateMove(die, movePath);
+    if (game.phase === 'GAME_OVER') return false;
+
+    const enemyDie = getDieAt(tq, tr);
+    const adjacent = hexDist(die.q, die.r, tq, tr) === 1;
+    const canStrike = die.hp > 0 && die.trapped === 0 && die.frozen === 0 && adjacent &&
+        enemyDie && enemyDie.team !== die.team && !enemyDie.concealed;
+    if (!canStrike) {
+        const stepsTaken = Math.max(0, movePath.length - 1);
+        if (die.hp > 0 && die.trapped === 0 && stepsTaken > 0) {
+            die.moveAllowance = Math.max(0, die.moveAllowance - stepsTaken);
+        } else {
+            die.moveAllowance = 0;
+        }
+        if (die.hp > 0) addFloatingText('⚠️ Attack interrupted!', die.q, die.r, '#fbbf24', 16);
+        return false;
+    }
+
+    const prevQ = die.q, prevR = die.r;
+    await animateMove(die, [{ q: die.q, r: die.r }, { q: tq, r: tr }]);
+    if (game.phase === 'GAME_OVER') return false;
+    if (die.hp <= 0 || enemyDie.hp <= 0) {
+        // Attacker (or target) died from a hazard on the final step
+        die.moveAllowance = 0;
+        if (die.hp > 0 && die.q === tq && die.r === tr && enemyDie.hp > 0) {
+            die.q = prevQ; die.r = prevR;
+        }
+        return false;
+    }
+
+    resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR);
+    return true;
 }
 
 async function handlePlayerMove(tq, tr) {
@@ -1017,232 +1236,7 @@ async function handlePlayerMove(tq, tr) {
     setButtons(false, false);
 
     if (info.isAttack) {
-        const movePath = path.slice(0, -1);
-        if (movePath.length > 1) await animateMove(die, movePath);
-
-        const prevQ = die.q, prevR = die.r;
-        const enemyDie = getDieAt(tq, tr);
-        if (!enemyDie) {
-            die.q = tq; die.r = tr;
-            game.phase = 'PLAYER_TURN';
-            setButtons(true, false);
-            return;
-        }
-
-        await animateMove(die, [{ q: die.q, r: die.r }, { q: tq, r: tr }]);
-
-        // Calculate damage with Toughness reduction: -3 / -5 / -7
-        const toughLvl = getSkillLevel(enemyDie, 'toughness');
-        const toughRed = toughLvl === 1 ? 3 : toughLvl === 2 ? 5 : toughLvl === 3 ? 7 : 0;
-
-        const attackerEffDmg = getDieEffectiveDamage(die);
-        let rawDamage = attackerEffDmg * die.damageMultiplier;
-
-        // Ninja Momentum Passive (+1 DMG per remaining move after attacking, max +5 DMG)
-        if (die.archetype === 'ninja') {
-            const remainingMoves = Math.max(0, die.moveAllowance - info.dist);
-            const ninjaBonus = Math.min(5, remainingMoves);
-            if (ninjaBonus > 0) {
-                rawDamage += ninjaBonus;
-                addFloatingText(`🥷 +${ninjaBonus} Momentum DMG!`, die.q, die.r, '#60a5fa', 16);
-            }
-        }
-
-        // Piercer Tank Killer (+10%/15%/20%/25% of target enemy HP)
-        const tankKillerLvl = getSkillLevel(die, 'tankKiller');
-        if (tankKillerLvl > 0) {
-            const pct = tankKillerLvl === 1 ? 0.10 : tankKillerLvl === 2 ? 0.15 : tankKillerLvl === 3 ? 0.20 : 0.25;
-            const tankBonus = Math.max(1, Math.round(enemyDie.hp * pct));
-            rawDamage += tankBonus;
-            addFloatingText(`🎯 Tank Killer +${tankBonus} DMG!`, die.q, die.r, '#f59e0b', 16);
-        }
-
-        rawDamage = Math.max(1, rawDamage - toughRed);
-        const damage = enemyDie.halfDamage > 0 ? Math.ceil(rawDamage / 2) : rawDamage;
-
-        die.hasAttackedThisTurn = true;
-        die.totalDamageDealt = (die.totalDamageDealt || 0) + damage;
-        enemyDie.hp -= damage;
-        enemyDie.totalDamageTaken = (enemyDie.totalDamageTaken || 0) + damage;
-        enemyDie.damagedThisWave = true;
-        SFX.attack();
-
-        // Track stats: Damage Dealt by Player Die
-        if (game.stats) {
-            game.stats.damageDealt[die.id] = (game.stats.damageDealt[die.id] || 0) + damage;
-            game.stats.damageDealt.total += damage;
-            updateStatsDisplay();
-        }
-
-        // Check Rage Back Stronger on enemy
-        const enemyBackLvl = getSkillLevel(enemyDie, 'backStronger');
-        if (enemyBackLvl > 0 || enemyDie.archetype === 'Rage') {
-            const reqDmg = enemyBackLvl === 2 ? 9 : enemyBackLvl === 3 ? 7 : 10;
-            const newBonus = Math.min(10, Math.floor(enemyDie.totalDamageTaken / reqDmg));
-            if (newBonus > (enemyDie.bonusDamageFromDamageTaken || 0)) {
-                const diff = newBonus - (enemyDie.bonusDamageFromDamageTaken || 0);
-                enemyDie.bonusDamageFromDamageTaken = newBonus;
-                addFloatingText(`😡 Rage +${diff} DMG!`, enemyDie.q, enemyDie.r, '#ef4444', 18);
-            }
-        }
-
-        // Check Defender Thorns reflect on attacker (die): 1 / 3 / 5
-        const thornsLvl = getSkillLevel(enemyDie, 'thorns');
-        if (thornsLvl > 0) {
-            const reflectDmg = thornsLvl === 1 ? 1 : thornsLvl === 2 ? 3 : 5;
-            die.hp -= reflectDmg;
-            die.totalDamageTaken = (die.totalDamageTaken || 0) + reflectDmg;
-            die.damagedThisWave = true;
-            if (die.hp < 0) die.hp = 0;
-
-            // Track stats: Damage Taken by Player Die from Thorns
-            if (game.stats) {
-                game.stats.damageTaken[die.id] = (game.stats.damageTaken[die.id] || 0) + reflectDmg;
-                game.stats.damageTaken.total += reflectDmg;
-                updateStatsDisplay();
-            }
-
-            const dieBackLvl = getSkillLevel(die, 'backStronger');
-            if (dieBackLvl > 0 || die.archetype === 'Rage') {
-                const reqDmg = dieBackLvl === 2 ? 9 : dieBackLvl === 3 ? 7 : 10;
-                const newBonus = Math.min(10, Math.floor(die.totalDamageTaken / reqDmg));
-                if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
-                    const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
-                    die.bonusDamageFromDamageTaken = newBonus;
-                    addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
-                }
-            }
-
-            addFloatingText(`-${reflectDmg} 🛡️ Thorns`, die.q, die.r, '#a8a29e', 18);
-        }
-
-        // Dracula Lifesteal
-        const healLvl = getSkillLevel(die, 'healOnAtk');
-        if (healLvl > 0 && die.antiHealTurns === 0) {
-            const healAmt = healLvl === 1 ? 2 : healLvl === 2 ? 3 : 5;
-            const prevHp = die.hp;
-            const maxHp = die.maxHp || (game && game.settings ? game.settings.startHp : (typeof gameSettings !== 'undefined' ? gameSettings.startHp : 50));
-            die.hp = Math.min(maxHp, die.hp + healAmt);
-            const actualHeal = die.hp - prevHp;
-            die.totalHealDone = (die.totalHealDone || 0) + actualHeal;
-            if (game.stats && actualHeal > 0) {
-                game.stats.healDone[die.id] = (game.stats.healDone[die.id] || 0) + actualHeal;
-                game.stats.healDone.total += actualHeal;
-                updateStatsDisplay();
-            }
-            addFloatingText(`+${healAmt} 🩸`, die.q, die.r, '#34d399', 16);
-        } else if (healLvl > 0 && die.antiHealTurns > 0) {
-            addFloatingText(`🚫 Anti-Healed!`, die.q, die.r, '#ef4444', 14);
-        }
-
-        // Dracula Bleed: If already bleeding, upgrade stack if current skill is higher and refresh 3-turn duration
-        const bleedLvl = getSkillLevel(die, 'bleed');
-        if (bleedLvl > 0) {
-            const stacksToAdd = bleedLvl === 1 ? 1 : bleedLvl === 2 ? 2 : 3;
-            if (enemyDie.bleedTurns > 0 || enemyDie.bleedStacks > 0) {
-                enemyDie.bleedStacks = Math.min(3, Math.max(enemyDie.bleedStacks || 1, stacksToAdd));
-                enemyDie.bleedSourceDieId = die.id;
-                enemyDie.bleedSourceTeam = die.team;
-                enemyDie.bleedTurns = 3;
-                enemyDie.antiHealTurns = 3;
-                addFloatingText(`🩸 Bleed Refreshed (${enemyDie.bleedStacks} stacks, 3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
-                addCombatLog(`${die.icon} ${die.id.toUpperCase()} refreshed Bleed duration (3 turns, ${enemyDie.bleedStacks} stacks) on ${enemyDie.icon} ${enemyDie.id.toUpperCase()}!`, '🩸', '#ef4444');
-            } else {
-                enemyDie.bleedStacks = Math.min(3, stacksToAdd);
-                enemyDie.bleedSourceDieId = die.id;
-                enemyDie.bleedSourceTeam = die.team;
-                enemyDie.bleedTurns = 3;
-                enemyDie.antiHealTurns = 3;
-                addFloatingText(`🩸 Bleed x${enemyDie.bleedStacks} (3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
-                addCombatLog(`${die.icon} ${die.id.toUpperCase()} inflicted Bleed x${enemyDie.bleedStacks} on ${enemyDie.icon} ${enemyDie.id.toUpperCase()} (3 turns)!`, '🩸', '#ef4444');
-            }
-        }
-
-        addFloatingText(`-${damage}`, tq, tr, '#ff4466', 22);
-        if (die.damageMultiplier > 1) addFloatingText(`×${die.damageMultiplier}!`, tq, tr - 0.4, '#f59e0b', 14);
-        addCombatLog(`${die.icon} ${die.id.toUpperCase()} attacked ${enemyDie.icon} ${enemyDie.id.toUpperCase()} for ${damage} DMG!`, '⚔️', '#ff4466');
-
-        const p = hexToPixel(tq, tr);
-        spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#ff4466', 15, 3, 600, 3);
-
-        if (enemyDie.hp <= 0) {
-            enemyDie.hp = 0;
-            addFloatingText('💀 DESTROYED!', tq, tr + 0.5, '#ff2244', 16);
-            addCombatLog(`💀 ${enemyDie.icon} ${enemyDie.id.toUpperCase()} was destroyed!`, '💀', '#ef4444');
-            SFX.destroy();
-            die.q = tq; die.r = tr;
-
-            // Rage Explode on death
-            const explodeLvl = getSkillLevel(enemyDie, 'explode');
-            if (explodeLvl > 0) {
-                const expDmg = explodeLvl === 1 ? 8 : 15;
-                addFloatingText(`💥 EXPLODE -${expDmg}!`, tq, tr, '#ef4444', 24);
-                SFX.destroy();
-                aliveDice('player').forEach(pd => {
-                    pd.hp -= expDmg;
-                    pd.totalDamageTaken = (pd.totalDamageTaken || 0) + expDmg;
-                    pd.damagedThisWave = true;
-                    if (pd.hp < 0) pd.hp = 0;
-                    addFloatingText(`-${expDmg} 💥`, pd.q, pd.r, '#ef4444', 20);
-                });
-            }
-
-            // Necromancer Undead split check (without consuming Angel revive!)
-            const didSplit = handleUndeadSplit(enemyDie);
-
-            // Revive check (Angel revive) if didn't split
-            if (!didSplit) {
-                for (const teamDie of game.cpuDice) {
-                    const revLvl = getSkillLevel(teamDie, 'revive');
-                    if (revLvl > 0 && !enemyDie.revived) {
-                        const healAmount = revLvl * 15;
-                        enemyDie.hp = healAmount;
-                        enemyDie.revived = true;
-                        teamDie.totalHealDone = (teamDie.totalHealDone || 0) + healAmount;
-                        if (teamDie.team === 'player' && game.stats) {
-                            game.stats.healDone[teamDie.id] = (game.stats.healDone[teamDie.id] || 0) + healAmount;
-                            game.stats.healDone.total += healAmount;
-                            updateStatsDisplay();
-                        }
-                        const emptyHex = findNearestEmptyHex(enemyDie.q, enemyDie.r);
-                        enemyDie.q = emptyHex.q;
-                        enemyDie.r = emptyHex.r;
-                        enemyDie.movedThisWave = true;
-                        addFloatingText(`😇 REVIVED (${enemyDie.hp} HP)!`, enemyDie.q, enemyDie.r, '#fbbf24', 20);
-                        SFX.heal();
-                        break;
-                    }
-                }
-            }
-        } else {
-            die.q = tq; die.r = tr;
-            enemyDie.q = prevQ; enemyDie.r = prevR;
-            enemyDie.movedThisWave = true;
-            if (typeof triggerTileEffectOnDie === 'function') {
-                triggerTileEffectOnDie(enemyDie);
-                triggerTileEffectOnDie(die);
-            }
-        }
-
-        die.damageMultiplier = 1;
-        const attackedId = enemyDie.id;
-
-        die.moveAllowance -= info.dist;
-        if (die.moveAllowance < 0) die.moveAllowance = 0;
-
-        const quickLvl = getSkillLevel(die, 'quickDestruct');
-        const quickChance = quickLvl === 1 ? 0.25 : quickLvl === 2 ? 0.35 : quickLvl === 3 ? 0.50 : 0;
-        if (quickLvl > 0 && die.moveAllowance > 0 && Math.random() < quickChance) {
-            die.attackAgainActive = true;
-            addFloatingText('🥷 Quick Destruct!', die.q, die.r, '#60a5fa', 18);
-        }
-
-        if (die.attackAgainActive && die.moveAllowance > 0) {
-            die.attackAgainActive = false;
-            die.lastAttackedEnemyId = attackedId;
-        } else {
-            die.moveAllowance = 0;
-        }
+        await performMeleeAttack(die, path, info, tq, tr);
 
         updateMoves();
         updateDiceHP();
@@ -1253,7 +1247,7 @@ async function handlePlayerMove(tq, tr) {
 
         game.selectedDie = null;
 
-        if (die.moveAllowance > 0) {
+        if (die.hp > 0 && die.moveAllowance > 0) {
             game.phase = 'PLAYER_TURN';
             setMessage(`Attack Again! ${die.moveAllowance} moves left.`);
             selectDie(die);
@@ -1268,7 +1262,9 @@ async function handlePlayerMove(tq, tr) {
         }
     } else {
         await animateMove(die, path);
-        die.moveAllowance -= info.dist;
+        if (game.phase === 'GAME_OVER') return;
+        die.moveAllowance = Math.max(0, die.moveAllowance - info.dist);
+        if (die.hp <= 0 || die.trapped > 0) die.moveAllowance = 0;
 
         updateMoves();
         updateDiceHP();
@@ -1281,7 +1277,7 @@ async function handlePlayerMove(tq, tr) {
             await handleTurnEndSequence('player');
         } else {
             game.phase = 'PLAYER_TURN';
-            if (die.moveAllowance > 0) {
+            if (die.hp > 0 && die.moveAllowance > 0) {
                 selectDie(die);
             } else {
                 game.selectedDie = null;
@@ -1294,14 +1290,20 @@ async function handlePlayerMove(tq, tr) {
 
 function endTurn() {
     if (game.phase !== 'PLAYER_TURN' && game.phase !== 'PLAYER_CARD_TARGET') return;
+    game.phase = 'TURN_ENDING';
     game.selectedDie = null;
     game.reachable = null;
     game.parents = null;
+    game.activeCard = null;
+    game.cardTargets = [];
+    game.pivotPreview = false;
+    game.pivotPiercer = null;
     aliveDice('player').forEach(d => d.moveAllowance = 0);
     updateMoves();
+    updateCardHand();
     setButtons(false, false);
     setMessage("Turn ended.");
-    setTimeout(() => handleTurnEndSequence('player'), 600);
+    matchTimeout(() => handleTurnEndSequence('player'), 600);
 }
 
 function handlePsychicEnemySelect(q, r) {
@@ -1323,6 +1325,7 @@ async function handlePsychicTileSelect(q, r) {
         game.phase = 'PLAYER_ANIMATING';
         const oldP = hexToPixel(enemy.q, enemy.r);
         const dist = hexDist(enemy.q, enemy.r, q, r);
+        startSlide(enemy, enemy.q, enemy.r, 560, 1.0);
         enemy.q = q; enemy.r = r;
         enemy.movedThisWave = true;
         const newP = hexToPixel(q, r);
@@ -1331,6 +1334,8 @@ async function handlePsychicTileSelect(q, r) {
         spawnParticles(oldP.x + gridCenterX, oldP.y + gridCenterY, '#c084fc', 18, 3, 600);
         spawnParticles(newP.x + gridCenterX, newP.y + gridCenterY, '#c084fc', 18, 3, 600);
         addFloatingText('🔮 Pushed!', q, r, '#c084fc', 20);
+        if (game.psychicSource) fxBeam(game.psychicSource, enemy, '#B79CF2', 500);
+        { const p = hexScreen(q, r); fxRing(p.x, p.y + HEX_SIZE * 0.3, '#B79CF2', HEX_SIZE * 1.5, 600, 5); }
 
         // Forced movement bleed capped to 11
         applyForcedMoveBleed(enemy, dist);
@@ -1345,10 +1350,13 @@ async function handlePsychicTileSelect(q, r) {
         const canvasWrap = document.getElementById('canvas-wrapper');
         if (canvasWrap) canvasWrap.classList.remove('aura-psychic');
 
+        updateDiceHP();
+        if (checkWin()) return true;
         await delay(600);
+        if (game.phase === 'GAME_OVER') return true;
 
         game.phase = 'PLAYER_TURN';
-        setMessage('Your turn! Click a green die to move.');
+        setMessage('Your turn. Pick one of your dice to move.');
         setButtons(true, false);
         return true;
     }
@@ -1369,7 +1377,9 @@ function handleMindControlEnemySelect(q, r) {
         game.cpuDice = game.cpuDice.filter(d => d.id !== die.id);
         if (!game.playerDice.some(d => d.id === die.id)) game.playerDice.push(die);
 
-        game.mindControlUsedWave = game.wave;
+        setCooldownWave('mindControlUsedWave', 'player');
+        if (game.mindControlSource) fxBeam(game.mindControlSource, die, '#B79CF2', 800);
+        { const p = dieFxPos(die); fxRing(p.x, p.y + HEX_SIZE * 0.3, '#B79CF2', HEX_SIZE * 1.6, 700, 5); }
         game.mindControlSource = null;
 
         // Roll fresh movement points for this claimed die so player can command it immediately!
@@ -1378,6 +1388,8 @@ function handleMindControlEnemySelect(q, r) {
         die.baseDamage = rollVal;
         die.moveAllowance = rollVal;
         die.hasAttackedThisTurn = false;
+        die.lastAttackedEnemyId = null;
+        die.attackAgainActive = false;
         die.damageMultiplier = 1;
 
         SFX.powerUp();
@@ -1395,115 +1407,79 @@ function handleMindControlEnemySelect(q, r) {
     return false;
 }
 
-function handleArcherTargetSelect(q, r) {
+async function handleArcherTargetSelect(q, r) {
     const enemy = getDieAt(q, r);
     if (enemy && enemy.team === 'cpu' && enemy.hp > 0 && !enemy.concealed && game.archerSource) {
         game.selectedDie = null;
         game.reachable = null;
         game.parents = null;
-        executeArcherLongShot(game.archerSource, enemy);
+        const archer = game.archerSource;
         game.archerSource = null;
-        game.phase = 'PLAYER_TURN';
+        game.phase = 'PLAYER_ANIMATING';
+        await executeArcherLongShot(archer, enemy);
+        if (game.phase === 'GAME_OVER') return true;
         setMessage('🏹 Arrow fired! Archer turn ended.');
-        if (totalMovesLeft('player') <= 0) {
-            setTimeout(() => handleTurnEndSequence('player'), 600);
-        } else {
-            setButtons(true, false);
-        }
+        finishPlayerSkillAction();
         return true;
     }
     return false;
 }
 
 function renderGameOverStatsHTML(isWin) {
-    const elapsedMins = Math.floor((game.matchTimeSeconds || 0) / 60);
-    const elapsedSecs = (game.matchTimeSeconds || 0) % 60;
-    const timeStr = `${elapsedMins.toString().padStart(2, '0')}:${elapsedSecs.toString().padStart(2, '0')}`;
-    const startHp = game && game.settings ? game.settings.startHp : (typeof gameSettings !== 'undefined' ? gameSettings.startHp : 50);
-    const diff = (typeof gameSettings !== 'undefined' ? gameSettings.difficulty : 'Medium').toUpperCase();
+    const timeStr = formatClock(game.matchTimeSeconds);
+    const startHp = gameSettings.startHp || 50;
+    const diff = gameSettings.difficulty || 'medium';
+    const diffLabel = diff.charAt(0).toUpperCase() + diff.slice(1);
 
-    // Player Dice calculations
-    let pTotalDealt = 0, pTotalTaken = 0, pTotalHeal = 0;
-    const playerDiceList = (game.playerDice || []).map((d, i) => {
-        const dealt = d.totalDamageDealt || 0;
-        const taken = d.totalDamageTaken || 0;
-        const heal = d.totalHealDone || 0;
-        pTotalDealt += dealt; pTotalTaken += taken; pTotalHeal += heal;
-        const name = d.isSplit ? `${d.icon} ${d.id}` : `${d.icon} D${i + 1} (${d.archetype.toUpperCase()})`;
+    const teamBlock = (dice, title, dotCls) => {
+        let dealt = 0, taken = 0, heal = 0;
+        const rows = dice.map((d, i) => {
+            dealt += d.totalDamageDealt || 0; taken += d.totalDamageTaken || 0; heal += d.totalHealDone || 0;
+            return `
+                <div class="game-over-die-item">
+                    <span class="game-over-die-name">${classBadge(d.archetype, 'sm')}${dieDisplayName(d, i).name}</span>
+                    <span class="game-over-stat-pills">
+                        <span class="game-over-pill dmg" title="Damage dealt">${d.totalDamageDealt || 0}</span>
+                        <span class="game-over-pill taken" title="Damage taken">${d.totalDamageTaken || 0}</span>
+                        <span class="game-over-pill heal" title="HP healed">${d.totalHealDone || 0}</span>
+                    </span>
+                </div>`;
+        }).join('');
         return `
-            <div class="game-over-die-item">
-                <span style="font-weight:700;color:var(--player);">${name}</span>
-                <div class="game-over-stat-pills">
-                    <span class="game-over-pill dmg" title="Damage Dealt">⚔️ ${dealt}</span>
-                    <span class="game-over-pill taken" title="Damage Taken">🛡️ ${taken}</span>
-                    <span class="game-over-pill heal" title="Healing">💚 ${heal}</span>
+            <div class="game-over-team-box">
+                <div class="game-over-team-title">
+                    <span style="display:inline-flex;align-items:center;gap:8px;"><span class="team-dot ${dotCls}"></span>${title}</span>
+                    <span class="game-over-stat-pills">
+                        <span class="game-over-pill dmg" title="Damage dealt">${dealt}</span>
+                        <span class="game-over-pill taken" title="Damage taken">${taken}</span>
+                        <span class="game-over-pill heal" title="HP healed">${heal}</span>
+                    </span>
                 </div>
-            </div>
-        `;
-    }).join('');
-
-    // CPU Dice calculations
-    let cTotalDealt = 0, cTotalTaken = 0, cTotalHeal = 0;
-    const cpuDiceList = (game.cpuDice || []).map((d, i) => {
-        const dealt = d.totalDamageDealt || 0;
-        const taken = d.totalDamageTaken || 0;
-        const heal = d.totalHealDone || 0;
-        cTotalDealt += dealt; cTotalTaken += taken; cTotalHeal += heal;
-        const name = d.isSplit ? `${d.icon} ${d.id}` : `${d.icon} CPU ${i + 1} (${d.archetype.toUpperCase()})`;
-        return `
-            <div class="game-over-die-item">
-                <span style="font-weight:700;color:var(--cpu);">${name}</span>
-                <div class="game-over-stat-pills">
-                    <span class="game-over-pill dmg" title="Damage Dealt">⚔️ ${dealt}</span>
-                    <span class="game-over-pill taken" title="Damage Taken">🛡️ ${taken}</span>
-                    <span class="game-over-pill heal" title="Healing">💚 ${heal}</span>
-                </div>
-            </div>
-        `;
-    }).join('');
+                ${rows}
+            </div>`;
+    };
 
     return `
         <div class="overlay-box game-over-modal-box">
-            <h2>${isWin ? '🏆 VICTORY! 🏆' : '💀 DEFEAT 💀'}</h2>
-            <p style="color:${isWin ? 'var(--player)' : 'var(--cpu)'};font-size:1.05rem;font-weight:700;margin:6px 0;">
-                ${isWin ? 'All enemy dice were conquered!' : 'Your team was destroyed in the arena...'}
-            </p>
+            <div class="overlay-icon ${isWin ? 'gold' : 'berry'}">${iconSVG(isWin ? 'trophy' : 'necromancer')}</div>
+            <h2>${isWin ? 'Victory' : 'Defeat'}</h2>
+            <p>${isWin ? 'Every enemy die has been knocked out.' : 'Your last die fell. The computer holds the arena.'}</p>
 
             <div class="game-over-match-summary">
-                <span>🌊 Wave: <b style="color:var(--gold);">${game.wave}</b></span>
-                <span>⏱️ Time: <b style="color:var(--accent);">${timeStr}</b></span>
-                <span>❤️ Mode: <b>${startHp} HP</b> (${diff})</span>
+                <span>Reached <b>wave ${game.wave}</b></span>
+                <span>Match time <b>${timeStr}</b></span>
+                <span><b>${startHp} HP</b>, ${diffLabel}</span>
             </div>
 
             <div class="game-over-stats-grid">
-                <div class="game-over-team-box player">
-                    <div class="game-over-team-title">
-                        <span>🟢 Player Team</span>
-                        <div class="game-over-stat-pills">
-                            <span class="game-over-pill dmg" title="Total DMG Dealt">⚔️ ${pTotalDealt}</span>
-                            <span class="game-over-pill taken" title="Total DMG Taken">🛡️ ${pTotalTaken}</span>
-                            <span class="game-over-pill heal" title="Total Heal">💚 ${pTotalHeal}</span>
-                        </div>
-                    </div>
-                    ${playerDiceList}
-                </div>
-
-                <div class="game-over-team-box cpu">
-                    <div class="game-over-team-title">
-                        <span>🔴 Enemy Team</span>
-                        <div class="game-over-stat-pills">
-                            <span class="game-over-pill dmg" title="Total DMG Dealt">⚔️ ${cTotalDealt}</span>
-                            <span class="game-over-pill taken" title="Total DMG Taken">🛡️ ${cTotalTaken}</span>
-                            <span class="game-over-pill heal" title="Total Heal">💚 ${cTotalHeal}</span>
-                        </div>
-                    </div>
-                    ${cpuDiceList}
-                </div>
+                ${teamBlock(game.playerDice || [], 'Your team', 'player')}
+                ${teamBlock(game.cpuDice || [], 'Computer', 'cpu')}
             </div>
+            <p style="font-size:0.8rem;margin-top:10px;">Gold is damage dealt, red is damage taken, teal is HP healed.</p>
 
-            <div style="display:flex;gap:12px;margin-top:16px;justify-content:center;flex-wrap:wrap;">
-                <button class="overlay-btn restart" onclick="hideOverlay(); startGame();">🔄 ${isWin ? 'Play Again' : 'Try Again'}</button>
-                <button class="overlay-btn" style="background:linear-gradient(135deg, var(--cpu), #be123c);" onclick="hideOverlay(); quitToMainMenu();">🏠 Main Menu</button>
+            <div class="overlay-actions">
+                <button class="clay-btn plain" onclick="hideOverlay(); quitToMainMenu();">${iconSVG('home')}Main menu</button>
+                <button class="clay-btn teal" onclick="hideOverlay(); startGame();">${iconSVG('restart')}${isWin ? 'Play again' : 'Try again'}</button>
             </div>
         </div>
     `;

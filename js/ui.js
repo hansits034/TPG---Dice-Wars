@@ -7,19 +7,26 @@ function startTurnTimer() {
     updateTimerDisplay();
 
     turnTimerInterval = setInterval(() => {
-        const nonTurnPhases = ['START', 'SELECT', 'SETTINGS', 'PLAYER_ROLL', 'CPU_ROLL', 'WAVE_CLEAR', 'UPGRADE_MODAL', 'GAME_OVER'];
+        // Timer pauses while animations / turn transitions resolve so a timeout can't race an in-flight action
+        const nonTurnPhases = ['START', 'SELECT', 'SETTINGS', 'PLAYER_ROLL', 'CPU_ROLL', 'WAVE_CLEAR', 'UPGRADE_MODAL', 'GAME_OVER', 'PLAYER_ANIMATING', 'TURN_ENDING'];
         if (nonTurnPhases.includes(game.phase)) return;
         game.turnTimeLeft--;
         updateTimerDisplay();
 
         if (game.turnTimeLeft <= 0) {
             stopTurnTimer();
-            addFloatingText('⏰ Time Out!', 0, 0, '#ef4444', 24);
+            addFloatingText('Time out!', 0, 0, '#F2B84B', 24);
             if (game.currentTurn === 'player') {
                 if (typeof cancelCard === 'function') cancelCard();
                 game.pivotPreview = false;
+                game.pivotPiercer = null;
                 game.archerSource = null;
-                game.mcTelekinator = null;
+                game.mindControlSource = null;
+                game.psychicSource = null;
+                game.psychicTargetEnemy = null;
+                game.psychicAura = false;
+                const canvasWrap = document.getElementById('canvas-wrapper');
+                if (canvasWrap) canvasWrap.classList.remove('aura-psychic');
                 game.phase = 'PLAYER_TURN';
                 endTurn();
             }
@@ -47,92 +54,151 @@ function stopStopwatch() {
     stopwatchInterval = null;
 }
 
+function formatClock(totalSeconds) {
+    const m = String(Math.floor((totalSeconds || 0) / 60)).padStart(2, '0');
+    const s = String((totalSeconds || 0) % 60).padStart(2, '0');
+    return `${m}:${s}`;
+}
+
 function updateStopwatchDisplay() {
     const el = document.getElementById('stopwatch-badge');
-    if (el) {
-        const m = String(Math.floor(game.matchTimeSeconds / 60)).padStart(2, '0');
-        const s = String(game.matchTimeSeconds % 60).padStart(2, '0');
-        el.textContent = `⏱️ ${m}:${s}`;
-    }
+    const val = el && el.querySelector('.sw-val');
+    if (val) val.textContent = formatClock(game.matchTimeSeconds);
 }
 
 function updateTimerDisplay() {
     const el = document.getElementById('timer-badge');
-    if (el) el.querySelector('span').textContent = game.turnTimeLeft;
+    if (!el) return;
+    const span = el.querySelector('span');
+    if (span) span.textContent = game.turnTimeLeft;
+    el.classList.toggle('low', game.currentTurn === 'player' && game.turnTimeLeft <= 8);
+}
+
+// Human-readable label for a die in rosters and reports
+function dieDisplayName(d, i) {
+    const cls = archName(d.archetype);
+    if (d.isCloneDie) return { name: `${cls} clone`, sub: '' };
+    if (d.isSplit) return { name: `${cls} undead`, sub: d.id.endsWith('_a') ? 'A' : 'B' };
+    return { name: cls, sub: `Die ${i + 1}` };
+}
+
+function dieTagsHTML(d) {
+    const tags = [];
+    if (d.moveAllowance > 0 && game.currentTurn === d.team) tags.push(`<span class="tag moves">${iconSVG('sprint')}${d.moveAllowance} moves</span>`);
+    if (d.frozen > 0) tags.push(`<span class="tag frozen">${iconSVG('snow')}Frozen ${d.frozen}</span>`);
+    if (d.trapped > 0) tags.push(`<span class="tag trapped">${iconSVG('vine')}Rooted ${d.trapped}</span>`);
+    if (d.bleedStacks > 0) tags.push(`<span class="tag bleed">${iconSVG('drop')}Bleed ${d.bleedStacks}</span>`);
+    if ((d.aegisShield || 0) > 0) tags.push(`<span class="tag shield">${iconSVG('aegis')}${d.aegisShield}</span>`);
+    if (d.concealed > 0) tags.push(`<span class="tag hidden">${iconSVG('bubble')}Immune ${d.concealed}</span>`);
+    if (d.isMindControlled) tags.push(`<span class="tag zap">${iconSVG('telekinator')}Controlled</span>`);
+    const rage = getDieRageBonus(d);
+    if (rage > 0) tags.push(`<span class="tag rage">${iconSVG('flame')}+${rage} rage</span>`);
+    if (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) tags.push(`<span class="tag zap">${iconSVG('bolt')}Zap ${d.zapStacks || 0}/2</span>`);
+    return tags.join('');
+}
+
+// Skill level bars: one segment per level, filled up to the current level
+function dieSkillsHTML(d) {
+    if (!d.skills || d.skills.length === 0) return '';
+    return `<div class="die-skills">${d.skills.map(sk => {
+        const pips = Array.from({ length: sk.maxLvl }, (_, i) => `<i class="${i < sk.curLvl ? 'on' : ''}"></i>`).join('');
+        const state = sk.curLvl === 0 ? 'locked' : sk.curLvl >= sk.maxLvl ? 'max' : '';
+        const label = sk.curLvl === 0 ? 'Locked' : sk.curLvl >= sk.maxLvl ? 'Max' : `Lv ${sk.curLvl}`;
+        return `<div class="skill-chip ${state}" title="${sk.name}: ${sk.desc}">
+            <span class="skill-name">${sk.name}</span>
+            <span class="skill-pips">${pips}</span>
+            <span class="skill-lvl">${label}</span>
+        </div>`;
+    }).join('')}</div>`;
+}
+
+// Two-letter skill label for the compact roster ("Back Stronger" -> "BS", "Explode" -> "Ex")
+function skillAbbr(name) {
+    const words = name.split(/\s+/).filter(Boolean);
+    return words.length > 1 ? (words[0][0] + words[1][0]).toUpperCase() : name.slice(0, 2);
+}
+
+// Compact skill meter: abbreviation + level segments; full name and description on hover
+function dieSkillsMiniHTML(d) {
+    if (!d.skills || d.skills.length === 0) return '';
+    return d.skills.map(sk => {
+        const pips = Array.from({ length: sk.maxLvl }, (_, i) => `<i class="${i < sk.curLvl ? 'on' : ''}"></i>`).join('');
+        const state = sk.curLvl === 0 ? 'locked' : sk.curLvl >= sk.maxLvl ? 'max' : '';
+        const lvl = sk.curLvl === 0 ? 'locked' : `level ${sk.curLvl} of ${sk.maxLvl}`;
+        return `<span class="sk-mini ${state}" title="${sk.name} (${lvl}): ${sk.desc}"><b>${skillAbbr(sk.name)}</b><span class="skill-pips">${pips}</span></span>`;
+    }).join('');
+}
+
+// Icon-only status chips for the compact roster
+function dieTagsMiniHTML(d) {
+    const t = [];
+    const chip = (cls, icon, n, title) => t.push(`<span class="tag mini ${cls}" title="${title}">${iconSVG(icon)}${n != null ? n : ''}</span>`);
+    if (d.moveAllowance > 0 && game.currentTurn === d.team) chip('moves', 'sprint', d.moveAllowance, `${d.moveAllowance} moves left`);
+    if (d.frozen > 0) chip('frozen', 'snow', d.frozen, `Frozen for ${d.frozen} turns`);
+    if (d.trapped > 0) chip('trapped', 'vine', d.trapped, `Rooted for ${d.trapped} turns`);
+    if (d.bleedStacks > 0) chip('bleed', 'drop', d.bleedStacks, `Bleeding, ${d.bleedStacks} stacks`);
+    if ((d.aegisShield || 0) > 0) chip('shield', 'aegis', d.aegisShield, `Aegis shield ${d.aegisShield}`);
+    if (d.concealed > 0) chip('hidden', 'bubble', d.concealed, `Immune for ${d.concealed} waves`);
+    if (d.isMindControlled) chip('zap', 'telekinator', null, 'Mind-controlled');
+    const rage = getDieRageBonus(d);
+    if (rage > 0) chip('rage', 'flame', '+' + rage, `Rage bonus +${rage} damage`);
+    if (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) chip('zap', 'bolt', d.zapStacks || 0, `Zap charges ${d.zapStacks || 0}/2`);
+    return t.join('');
+}
+
+function rosterHTML(dice, team) {
+    const hpColor = pct => pct > 0.5 ? (team === 'player' ? 'var(--player)' : 'var(--cpu)') : pct > 0.25 ? 'var(--gold)' : '#E4572E';
+    return dice.map((d, i) => {
+        const maxH = d.maxHp || gameSettings.startHp || MAX_HP;
+        const pct = Math.max(0, Math.min(1, d.hp / maxH));
+        const { name, sub } = dieDisplayName(d, i);
+        const cls = [
+            d.hp <= 0 ? 'dead' : '',
+            d.frozen > 0 ? 'frozen' : '',
+            d.trapped > 0 ? 'trapped' : '',
+            d.concealed > 0 ? 'concealed' : '',
+            game.selectedDie && game.selectedDie.id === d.id ? 'selected' : '',
+        ].join(' ');
+        return `<div class="die-hp-card ${cls}">
+            ${classBadge(d.archetype)}
+            <div class="die-main">
+                <div class="die-line">
+                    <span class="die-name">${name}${sub ? `<small>${sub}</small>` : ''}</span>
+                    <span class="hp-num">${Math.max(0, d.hp)}/${maxH}</span>
+                    <span class="die-dmg-chip" title="Damage this turn">${getDieEffectiveDamage(d)}<small>dmg</small></span>
+                </div>
+                <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${hpColor(pct)}"></div></div>
+                ${d.hp > 0 ? `<div class="die-sub">${dieSkillsMiniHTML(d)}${dieTagsMiniHTML(d)}</div>` : ''}
+            </div>
+        </div>`;
+    }).join('');
 }
 
 function updateDiceHP() {
     const cpuEl = document.getElementById('cpu-dice-hp');
     const plEl = document.getElementById('player-dice-hp');
     if (!cpuEl || !plEl) return;
+    cpuEl.innerHTML = rosterHTML(game.cpuDice, 'cpu');
+    plEl.innerHTML = rosterHTML(game.playerDice, 'player');
+}
 
-    const defaultMaxHp = game && game.settings ? game.settings.startHp : (typeof gameSettings !== 'undefined' ? gameSettings.startHp : 50);
-
-    cpuEl.innerHTML = game.cpuDice.map((d, i) => {
-        const maxH = d.maxHp || defaultMaxHp;
-        const pct = Math.max(0, Math.min(1, d.hp / maxH));
-        const pctText = Math.max(0, Math.round(pct * 100));
-        const color = pct > 0.5 ? '#fb7185' : pct > 0.25 ? '#fbbf24' : '#ef4444';
-        const frozenCls = d.frozen > 0 ? ' frozen' : '';
-        const concealCls = d.concealed > 0 ? ' concealed' : '';
-        const trappedCls = d.trapped > 0 ? ' trapped' : '';
-        const backLvl = getSkillLevel(d, 'backStronger');
-        const rageBonus = getDieRageBonus(d);
-        const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
-        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks || 0}/2">⚡${d.zapStacks || 0}</span>` : '';
-        const aegisBadge = (d.aegisShield || 0) > 0 ? `<span class="move-badge" style="color:#38bdf8;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.3);" title="Aegis Shield: ${d.aegisShield} HP">🛡️${d.aegisShield}</span>` : '';
-        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
-        return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
-            <span style="color:var(--cpu)" class="die-class-badge">${dieLabel}</span>
-            <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
-            <span>${Math.max(0, d.hp)}/${maxH} (${pctText}%)</span>
-            ${aegisBadge}
-            ${rageBadge}
-            ${zapBadge}
-            ${d.moveAllowance > 0 && game.currentTurn === 'cpu' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
-        </div>`;
-    }).join('');
-
-    plEl.innerHTML = game.playerDice.map((d, i) => {
-        const maxH = d.maxHp || defaultMaxHp;
-        const pct = Math.max(0, Math.min(1, d.hp / maxH));
-        const pctText = Math.max(0, Math.round(pct * 100));
-        const color = pct > 0.5 ? '#34d399' : pct > 0.25 ? '#fbbf24' : '#ef4444';
-        const frozenCls = d.frozen > 0 ? ' frozen' : '';
-        const concealCls = d.concealed > 0 ? ' concealed' : '';
-        const trappedCls = d.trapped > 0 ? ' trapped' : '';
-        const backLvl = getSkillLevel(d, 'backStronger');
-        const rageBonus = getDieRageBonus(d);
-        const rageBadge = (backLvl > 0 || d.archetype === 'Rage') ? `<span class="move-badge" style="color:#ef4444;background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);" title="Taken: ${d.totalDamageTaken || 0} dmg -> Bonus DMG: +${rageBonus}">😡${d.totalDamageTaken || 0} dmg (+${rageBonus})</span>` : '';
-        const zapBadge = (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) ? `<span class="move-badge" style="color:#c084fc;background:rgba(168,85,247,0.15);border:1px solid rgba(168,85,247,0.3);" title="Zap Stacks: ${d.zapStacks || 0}/2">⚡${d.zapStacks || 0}</span>` : '';
-        const aegisBadge = (d.aegisShield || 0) > 0 ? `<span class="move-badge" style="color:#38bdf8;background:rgba(56,189,248,0.15);border:1px solid rgba(56,189,248,0.3);" title="Aegis Shield: ${d.aegisShield} HP">🛡️${d.aegisShield}</span>` : '';
-        const dieLabel = d.isSplit ? `${d.icon} ${d.id}[${getDieEffectiveDamage(d)}]` : `${d.icon} D${i + 1}[${getDieEffectiveDamage(d)}]`;
-        return `<div class="die-hp-card ${d.hp <= 0 ? 'dead' : ''}${frozenCls}${concealCls}${trappedCls}">
-            <span style="color:var(--player)" class="die-class-badge">${dieLabel}</span>
-            <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${color}"></div></div>
-            <span>${Math.max(0, d.hp)}/${maxH} (${pctText}%)</span>
-            ${aegisBadge}
-            ${rageBadge}
-            ${zapBadge}
-            ${d.moveAllowance > 0 && game.currentTurn === 'player' ? `<span class="move-badge">🦶${d.moveAllowance}</span>` : ''}
-        </div>`;
-    }).join('');
+function rollDiceHTML(values, team) {
+    const cls = team === 'player' ? 'player-die' : 'cpu-die';
+    const total = values.reduce((a, b) => a + b, 0);
+    return values.map(v => `<span class="roll-die-box ${cls}">${v}</span>`).join('<span class="roll-plus">+</span>') +
+        `<span class="roll-eq">=</span><span class="roll-total">${total}</span>`;
 }
 
 function updateRollDisplay(values, team) {
     const el = document.getElementById('roll-display');
     if (!el) return;
-    if (!values || values.length === 0) { el.innerHTML = ''; return; }
-    const cls = team === 'player' ? 'player-die' : 'cpu-die';
-    const total = values.reduce((a, b) => a + b, 0);
-    el.innerHTML = `🎲 ` + values.map(v => `<span class="roll-die-box ${cls}">${v}</span>`).join('+') +
-        ` <span class="roll-eq">=</span> <span class="roll-total">${total}</span>`;
+    el.innerHTML = values && values.length ? rollDiceHTML(values, team) : '';
 }
 
 function updateMoves() {
     const total = game.currentTurn === 'player' ? totalMovesLeft('player') : totalMovesLeft('cpu');
     const el = document.getElementById('moves-display');
-    if (el) el.textContent = `Moves: ${total}`;
+    if (el) el.innerHTML = `<b>${total}</b> ${total === 1 ? 'move' : 'moves'}${game.currentTurn === 'cpu' ? ' (CPU)' : ''}`;
 }
 
 function updateWaveBadge() {
@@ -142,20 +208,25 @@ function updateWaveBadge() {
 
 function setMessage(msg) {
     const el = document.getElementById('game-message');
-    if (el) el.textContent = msg;
+    if (el) el.textContent = stripEmoji(msg);
+}
+
+function setSkillButton(btn, icon, label, count) {
+    btn.innerHTML = `${iconSVG(icon)}<span>${label}</span>${count != null ? `<span class="btn-count">${count}</span>` : ''}`;
 }
 
 function updateSkillButtons() {
     const isPlayerTurn = game.phase === 'PLAYER_TURN' && game.currentTurn === 'player';
+    const alivePlayer = aliveDice('player');
 
     // 1. Mage Zap
     const zapBtn = document.getElementById('btn-zap');
     if (zapBtn) {
-        const playerMage = aliveDice('player').find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
+        const playerMage = alivePlayer.find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
         if (playerMage) {
             zapBtn.style.display = 'inline-flex';
             const stacks = playerMage.zapStacks || 0;
-            zapBtn.textContent = `⚡ ZAP (${stacks})`;
+            setSkillButton(zapBtn, 'bolt', 'Zap', stacks);
             zapBtn.disabled = !isPlayerTurn || stacks <= 0 || playerMage.frozen > 0 || playerMage.trapped > 0;
         } else {
             zapBtn.style.display = 'none';
@@ -165,34 +236,34 @@ function updateSkillButtons() {
     // 2. Archer Long Shot
     const archerBtn = document.getElementById('btn-archer');
     if (archerBtn) {
-        const playerArcher = aliveDice('player').find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0));
+        const archers = alivePlayer.filter(d => d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0);
+        const playerArcher = archers.find(d => !d.hasAttackedThisTurn && d.frozen === 0 && d.trapped === 0) || archers[0];
         if (playerArcher) {
             archerBtn.style.display = 'inline-flex';
-            const used = playerArcher.hasAttackedThisTurn;
-            archerBtn.disabled = !isPlayerTurn || used || playerArcher.frozen > 0 || playerArcher.trapped > 0;
+            setSkillButton(archerBtn, 'archer', playerArcher.hasAttackedThisTurn ? 'Shot fired' : 'Long shot');
+            archerBtn.disabled = !isPlayerTurn || playerArcher.hasAttackedThisTurn || playerArcher.frozen > 0 || playerArcher.trapped > 0;
         } else {
             archerBtn.style.display = 'none';
         }
     }
 
-    // 3. Piercer Pivot (3 Wave CD + 2-Click Preview + Cancel Button)
+    // 3. Piercer Pivot (3 wave cooldown + preview + cancel)
     const pivotBtn = document.getElementById('btn-pivot');
     const cancelPivotBtn = document.getElementById('btn-cancel-pivot');
     if (pivotBtn) {
-        const playerPiercer = aliveDice('player').find(d => (d.archetype === 'piercer' && getSkillLevel(d, 'pivot') > 0));
+        const piercers = alivePlayer.filter(d => getSkillLevel(d, 'pivot') > 0);
+        const playerPiercer = piercers.find(d => !d.hasAttackedThisTurn && d.frozen === 0 && d.trapped === 0) || piercers[0];
         if (playerPiercer) {
             pivotBtn.style.display = 'inline-flex';
-            const isPivotReady = (game.wave - (game.pivotUsedWave || -99)) >= 3;
-            const used = playerPiercer.hasAttackedThisTurn;
+            const pivotUsed = getCooldownWave('pivotUsedWave', 'player');
+            const isPivotReady = (game.wave - pivotUsed) >= 3;
             if (game.pivotPreview) {
-                pivotBtn.textContent = '🎯 CONFIRM PIVOT (8 DMG)';
+                setSkillButton(pivotBtn, 'piercer', 'Strike now');
                 pivotBtn.disabled = false;
-                pivotBtn.style.boxShadow = '0 0 25px rgba(245, 158, 11, 0.9)';
-                if (cancelPivotBtn) cancelPivotBtn.style.display = 'inline-flex';
+                if (cancelPivotBtn) { cancelPivotBtn.style.display = 'inline-flex'; setSkillButton(cancelPivotBtn, 'close', 'Cancel'); }
             } else {
-                pivotBtn.textContent = isPivotReady ? '🎯 Pivot (8 DMG)' : `🎯 Pivot (W${(game.pivotUsedWave || 0) + 3})`;
-                pivotBtn.disabled = !isPlayerTurn || !isPivotReady || used || playerPiercer.frozen > 0 || playerPiercer.trapped > 0;
-                pivotBtn.style.boxShadow = '';
+                setSkillButton(pivotBtn, 'piercer', isPivotReady ? 'Pivot' : `Pivot in wave ${pivotUsed + 3}`);
+                pivotBtn.disabled = !isPlayerTurn || !isPivotReady || playerPiercer.hasAttackedThisTurn || playerPiercer.frozen > 0 || playerPiercer.trapped > 0;
                 if (cancelPivotBtn) cancelPivotBtn.style.display = 'none';
             }
         } else {
@@ -201,22 +272,23 @@ function updateSkillButtons() {
         }
     }
 
-    // 4. Telekinator Mind Control (5 Wave CD + Unlock Check + Disabled if 1 enemy remains)
+    // 4. Telekinator Mind Control (5 wave cooldown, needs more than 1 enemy)
     const mindBtn = document.getElementById('btn-mind-control');
     if (mindBtn) {
-        const playerTele = aliveDice('player').find(d => (d.archetype === 'telekinator' && getSkillLevel(d, 'mindControl') > 0));
+        const teles = alivePlayer.filter(d => getSkillLevel(d, 'mindControl') > 0);
+        const playerTele = teles.find(d => d.frozen === 0 && d.trapped === 0) || teles[0];
         if (playerTele) {
             mindBtn.style.display = 'inline-flex';
-            const isMindReady = (game.wave - (game.mindControlUsedWave || -99)) >= 5;
-            const enemyCount = aliveDice('cpu').length;
-            if (enemyCount <= 1) {
+            const mindUsed = getCooldownWave('mindControlUsedWave', 'player');
+            const isMindReady = (game.wave - mindUsed) >= 5;
+            if (aliveDice('cpu').length <= 1) {
                 mindBtn.disabled = true;
-                mindBtn.textContent = '🔮 Mind Ctrl (Need >1 Enemy)';
-                mindBtn.title = 'Mind Control disabled when only 1 enemy die remains';
+                setSkillButton(mindBtn, 'telekinator', 'Mind control');
+                mindBtn.title = 'Needs at least 2 enemy dice on the board';
             } else {
                 mindBtn.disabled = !isPlayerTurn || !isMindReady || playerTele.frozen > 0 || playerTele.trapped > 0;
-                mindBtn.textContent = isMindReady ? '🔮 MIND CONTROL' : `🔮 Mind Ctrl (W${(game.mindControlUsedWave || 0) + 5})`;
-                mindBtn.title = 'Telekinator: Mind Control 1 enemy die every 5 waves';
+                setSkillButton(mindBtn, 'telekinator', isMindReady ? 'Mind control' : `Mind control in wave ${mindUsed + 5}`);
+                mindBtn.title = 'Take control of one enemy die for 2 waves';
             }
         } else {
             mindBtn.style.display = 'none';
@@ -236,75 +308,82 @@ function setButtons(endEnabled, deselectEnabled) {
     updateSkillButtons();
 }
 
+function cardArtHTML(card) {
+    return `<span class="card-art">${iconSVG(CARD_ICONS[card.id] || 'cards')}</span>`;
+}
+
 function updateCardHand() {
     const el = document.getElementById('card-slots');
     const cancelBtn = document.getElementById('btn-cancel-card');
     const discardBtn = document.getElementById('btn-discard-card');
-    if (cancelBtn) {
-        if (game.activeCard) cancelBtn.classList.add('active');
-        else cancelBtn.classList.remove('active');
-    }
-    if (discardBtn) {
-        if (game.activeCard) discardBtn.classList.add('active');
-        else discardBtn.classList.remove('active');
-    }
+    if (cancelBtn) cancelBtn.classList.toggle('active', !!game.activeCard);
+    if (discardBtn) discardBtn.classList.toggle('active', !!game.activeCard);
 
-    if (!el) return;
-    const maxHand = getMaxHandSize('player');
-
-    if (game.playerHand.length === 0) {
-        el.innerHTML = '<span class="empty-hand">No cards yet</span>';
-    } else {
-        el.innerHTML = game.playerHand.map((card, i) => {
-            const activeCls = game.activeCard && game.activeCard._handIdx === i ? ' active-card' : '';
-            return `<div class="card-slot ${card.rarity}${activeCls}" onclick="onCardClick(${i})" id="card-slot-${i}">
-                <span class="card-icon">${card.icon}</span>
-                <span class="card-name">${card.name}</span>
-                <span class="card-discard-x" onclick="event.stopPropagation(); cancelCard();" title="Cancel card selection">✕</span>
-                <div class="card-tooltip"><strong>${card.name}</strong><br>${card.desc}<br><em style="color:var(--${card.rarity})">${card.rarity.toUpperCase()}</em><br><span style="color:#94a3b8;font-size:0.65rem;">Click ✕ to cancel</span></div>
-            </div>`;
-        }).join('');
+    if (el) {
+        if (game.playerHand.length === 0) {
+            el.innerHTML = '<span class="empty-hand">No cards yet. Step on a glowing crystal to draw one.</span>';
+        } else {
+            el.innerHTML = game.playerHand.map((card, i) => {
+                const activeCls = game.activeCard && game.activeCard._handIdx === i ? ' active-card' : '';
+                return `<button class="card-slot ${card.rarity}${activeCls}" onclick="onCardClick(${i})" id="card-slot-${i}" title="${card.name} (${card.rarity}): ${card.desc}">
+                    <span class="card-rarity"></span>
+                    ${cardArtHTML(card)}
+                    <span class="card-name">${card.name}</span>
+                    <span class="card-desc">${card.desc}</span>
+                </button>`;
+            }).join('');
+        }
     }
     const cpuHandEl = document.getElementById('cpu-hand-count');
-    if (cpuHandEl) cpuHandEl.textContent = `🃏 ${game.cpuHand.length}/${getMaxHandSize('cpu')}`;
+    if (cpuHandEl) cpuHandEl.innerHTML = `${iconSVG('cards')}${game.cpuHand.length}/${getMaxHandSize('cpu')} cards`;
 }
 
 function showCardPopup(card, team) {
     const popup = document.createElement('div');
     popup.className = 'card-gained-popup';
     popup.innerHTML = `
-        <div class="cg-title">✨ Card Gained!</div>
-        <div class="cg-icon">${card.icon}</div>
-        <div class="cg-name">${card.name}</div>
-        <div class="cg-desc">${card.desc}</div>
-        <div class="cg-rarity ${card.rarity}">${card.rarity.toUpperCase()}</div>
+        <span class="card-art" style="--rc:var(--${card.rarity})">${iconSVG(CARD_ICONS[card.id] || 'cards')}</span>
+        <div>
+            <div class="cg-title">New ${card.rarity} card</div>
+            <div class="cg-name">${card.name}</div>
+            <div class="cg-desc">${card.desc}</div>
+        </div>
     `;
     document.body.appendChild(popup);
-    setTimeout(() => {
-        popup.style.animation = 'popupFadeOut 0.4s ease-in forwards';
-        setTimeout(() => popup.remove(), 400);
-    }, 1800);
+    setTimeout(() => popup.remove(), 2300);
 }
 
 function showBlitzAnnouncement(title, desc) {
     const el = document.createElement('div');
     el.className = 'blitz-announcement';
+    const icon = {
+        Tornado: 'dash', 'Alien visit': 'telekinator', Earthquake: 'wall',
+        Collapse: 'close', Rockslide: 'wall', 'Acid flood': 'drop',
+        Wildfire: 'flame', 'Spike traps': 'trap', 'Biohazard leak': 'flask',
+        Vines: 'vine', "Medusa's gaze": 'telekinator', Snowstorm: 'snow',
+        'Bee swarm': 'bolt', 'Mummy attack': 'necromancer', 'Killer robots': 'defender',
+        'The Magician': 'mage',
+    }[title] || 'star';
     el.innerHTML = `
-        <div class="blitz-title">${title}</div>
-        <div class="blitz-desc">${desc}</div>
+        <span class="blitz-badge">${iconSVG(icon)}</span>
+        <div>
+            <div class="blitz-kicker">Arena event, wave ${game.wave}</div>
+            <div class="blitz-title">${stripEmoji(title)}</div>
+            <div class="blitz-desc">${stripEmoji(desc)}</div>
+        </div>
     `;
     document.body.appendChild(el);
     SFX.blitz();
     setTimeout(() => {
-        el.style.animation = 'blitzFadeOut 0.4s ease-in forwards';
-        setTimeout(() => el.remove(), 400);
-    }, 2200);
+        el.style.animation = 'blitzFadeOut 0.35s ease-in forwards';
+        setTimeout(() => el.remove(), 350);
+    }, 2400);
 }
 
 function showOverlay(html) {
     const ol = document.getElementById('overlay');
     if (ol) {
-        ol.innerHTML = html;
+        ol.innerHTML = stripEmoji(html);
         ol.classList.remove('hidden');
     }
 }
@@ -317,42 +396,43 @@ function hideOverlay() {
 function openGameMenuModal() {
     showOverlay(`
         <div class="overlay-box" style="max-width:420px;">
-            <h2>⚙️ GAME MENU</h2>
-            <div style="display:flex;flex-direction:column;gap:12px;margin:20px 0;">
-                <button class="overlay-btn" style="margin:0;background:rgba(255,255,255,0.08);border:1px solid var(--border);" onclick="hideOverlay(); toggleBGM(); setTimeout(openGameMenuModal, 100);">
-                    ${bgmEnabled ? '🔊 BGM: ON' : '🔇 BGM: OFF'}
+            <h2>Paused</h2>
+            <p>The turn timer keeps running while this menu is open.</p>
+            <div class="menu-list">
+                <button class="clay-btn plain" onclick="hideOverlay(); toggleBGM(); setTimeout(openGameMenuModal, 100);">
+                    ${iconSVG(bgmEnabled ? 'music' : 'mute')}${bgmEnabled ? 'Music is on' : 'Music is off'}
                 </button>
-                <button class="overlay-btn restart" style="margin:0;" onclick="hideOverlay(); startGame();">
-                    🔄 Restart Match
-                </button>
-                <button class="overlay-btn" style="margin:0;background:linear-gradient(135deg, var(--cpu), #be123c);" onclick="hideOverlay(); quitToMainMenu();">
-                    🏠 Quit to Main Menu
-                </button>
+                <button class="clay-btn gold" onclick="hideOverlay(); startGame();">${iconSVG('restart')}Restart match</button>
+                <button class="clay-btn berry" onclick="hideOverlay(); quitToMainMenu();">${iconSVG('home')}Quit to main menu</button>
+                <button class="clay-btn teal" onclick="hideOverlay();">${iconSVG('right')}Resume</button>
             </div>
-            <button class="overlay-btn" onclick="hideOverlay();">Resume Game</button>
         </div>
     `);
 }
 
 function quitToMainMenu() {
+    // Abort the running match so pending async turn flows (CPU loop, animations, timeouts) stop
+    if (game) {
+        game.aborted = true;
+        game.phase = 'GAME_OVER';
+    }
     stopTurnTimer();
     stopStopwatch();
+    hideOverlay();
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('start-screen').classList.remove('hidden');
 }
 
-// Current active role in the Dice Codex card collection view
+// Current active role in the class guide
 let selectedCodexRoleId = 'dracula';
+const PASSIVE_SKILLS = ['defenderMastery', 'dashMastery', 'backStronger', 'doctorMastery', 'momentum', 'standstill'];
 
 function renderCodexRoleDetails(archId) {
     selectedCodexRoleId = archId;
     const arch = ARCHETYPES.find(a => a.id === archId) || ARCHETYPES[0];
 
-    // Update card active classes
-    const allCards = document.querySelectorAll('.royale-card');
-    allCards.forEach(card => {
-        if (card.dataset.archId === archId) card.classList.add('active');
-        else card.classList.remove('active');
+    document.querySelectorAll('.royale-card').forEach(card => {
+        card.classList.toggle('active', card.dataset.archId === archId);
     });
 
     const detailsContainer = document.getElementById('codex-role-details-area');
@@ -360,19 +440,14 @@ function renderCodexRoleDetails(archId) {
 
     let activeSkillCount = 0;
     const skillsHTML = arch.skills.map((s) => {
-        const isPassive = s.id === 'defenderMastery' || s.id === 'dashMastery' || s.id === 'backStronger' || s.id === 'doctorMastery' || s.id === 'momentum' || s.id === 'standstill';
-        let tagText = 'PASSIVE';
-        if (!isPassive) {
-            activeSkillCount++;
-            tagText = `SKILL ${activeSkillCount}`;
-        }
-        const badgeClass = isPassive ? 'codex-skill-badge passive-badge' : 'codex-skill-badge';
-        const boxClass = isPassive ? 'codex-skill-box passive' : 'codex-skill-box';
+        const isPassive = PASSIVE_SKILLS.includes(s.id);
+        const tagText = isPassive ? 'Passive' : `Skill ${++activeSkillCount}`;
+        const startNote = s.curLvl > 0 ? `starts at level ${s.curLvl}` : 'unlock through upgrades';
         return `
-            <div class="${boxClass}">
+            <div class="codex-skill-box">
                 <div class="codex-skill-head">
-                    <span class="codex-skill-title">⚡ ${s.name} <span class="codex-skill-max">(Max Lvl ${s.maxLvl})</span></span>
-                    <span class="${badgeClass}">${tagText}</span>
+                    <span class="codex-skill-title">${s.name}<span class="codex-skill-max">max level ${s.maxLvl}, ${startNote}</span></span>
+                    <span class="codex-skill-badge ${isPassive ? 'passive-badge' : ''}">${tagText}</span>
                 </div>
                 <div class="codex-skill-desc">${s.desc}</div>
             </div>
@@ -381,126 +456,85 @@ function renderCodexRoleDetails(archId) {
 
     detailsContainer.innerHTML = `
         <div class="codex-role-title-row">
-            <div class="codex-role-title-left">
-                <div class="codex-hero-icon">${arch.icon}</div>
-                <div>
-                    <div class="codex-hero-name">${arch.name}</div>
-                    <div style="font-size:0.75rem;color:var(--text-dim);margin-top:2px;">Role Identity & Archetype</div>
-                </div>
+            ${classBadge(arch.id, 'xl')}
+            <div>
+                <div class="codex-hero-name">${arch.name}</div>
+                <div class="codex-hero-sub">${arch.skills.length} skills. Level them up every 4 waves.</div>
             </div>
-            <span class="codex-role-tag">${ARCHETYPES.length} Playable Roles</span>
         </div>
-        <div class="codex-skills-list">
-            ${skillsHTML}
-        </div>
+        <div class="codex-skills-list">${skillsHTML}</div>
     `;
-
     if (typeof SFX !== 'undefined' && SFX.move) SFX.move();
 }
 
 function openDiceGuideModal() {
     selectedCodexRoleId = selectedPlayerClasses[0] || 'dracula';
-
-    const cardsHTML = ARCHETYPES.map((arch, idx) => {
-        const isActive = arch.id === selectedCodexRoleId ? ' active' : '';
-        return `
-            <div class="royale-card${isActive}" data-arch-id="${arch.id}" onclick="renderCodexRoleDetails('${arch.id}')">
-                <div class="royale-card-elixir"><span>${idx + 1}</span></div>
-                <div class="royale-card-art">${arch.icon}</div>
-                <div class="royale-card-ribbon">${arch.name}</div>
-            </div>
-        `;
-    }).join('');
+    const cardsHTML = ARCHETYPES.map(arch => `
+        <button class="royale-card${arch.id === selectedCodexRoleId ? ' active' : ''}" data-arch-id="${arch.id}" onclick="renderCodexRoleDetails('${arch.id}')">
+            ${classBadge(arch.id, 'lg')}
+            <span class="royale-card-ribbon">${arch.name}</span>
+        </button>
+    `).join('');
 
     showOverlay(`
         <div class="overlay-box dice-codex-container">
-            <h2>📖 DICE & SKILLS CODEX</h2>
-            <div class="codex-header-desc">
-                Select a role below to view detailed abilities and roguelike upgrades:
-            </div>
-            
-            <div class="codex-card-deck-grid">
-                ${cardsHTML}
-            </div>
-
-            <div class="codex-details-card" id="codex-role-details-area">
-                <!-- Injected via renderCodexRoleDetails -->
-            </div>
-
-            <div style="text-align:center;margin-top:14px;">
-                <button class="overlay-btn" onclick="hideOverlay();">Close Codex</button>
-            </div>
+            <h2>Class guide</h2>
+            <p class="overlay-lead" style="margin:0;">${ARCHETYPES.length} classes. Pick one to see what it does.</p>
+            <div class="codex-card-deck-grid">${cardsHTML}</div>
+            <div class="codex-details-card" id="codex-role-details-area"></div>
+            <div class="overlay-actions"><button class="clay-btn teal" onclick="hideOverlay();">Close guide</button></div>
         </div>
     `);
-
     renderCodexRoleDetails(selectedCodexRoleId);
 }
 
 function openHelpModal() {
     const totalWeight = CARD_DEFS.reduce((s, c) => s + c.weight, 0);
-    const cardRowsHTML = CARD_DEFS.map(c => {
-        const pct = ((c.weight / totalWeight) * 100).toFixed(1);
-        const rarityBadge = `<span class="card-rarity-tag ${c.rarity}">${c.rarity.toUpperCase()}</span>`;
-        return `
-            <tr>
-                <td style="text-align:left;font-weight:700;">${c.icon} ${c.name}</td>
-                <td>${rarityBadge}</td>
-                <td style="color:var(--gold);font-weight:800;">${pct}%</td>
-                <td style="text-align:left;color:var(--text-dim);font-size:0.8rem;">${c.desc}</td>
-            </tr>
-        `;
-    }).join('');
+    const cardRowsHTML = CARD_DEFS.map(c => `
+        <tr>
+            <td><span class="help-card-name"><span class="card-art" style="--rc:var(--${c.rarity})">${iconSVG(CARD_ICONS[c.id] || 'cards')}</span>${c.name}</span></td>
+            <td><span class="card-rarity-tag ${c.rarity}">${c.rarity}</span></td>
+            <td>${((c.weight / totalWeight) * 100).toFixed(1)}%</td>
+            <td>${c.desc}</td>
+        </tr>
+    `).join('');
 
     showOverlay(`
-        <div class="overlay-box help-content" style="max-width:680px;max-height:85vh;overflow-y:auto;">
-            <h2>❓ How to Play & Game Info</h2>
-            
-            <h3>🎲 Core Rules & Archetypes</h3>
-            <ul>
-                <li><strong>HP:</strong> Each die starts with <strong>50/75/100 HP</strong> (configurable in match settings).</li>
-                <li><strong>Damage:</strong> Equal to initial rolled die face value + buffs/skills.</li>
-                <li><strong>Unique Roles:</strong> 12 Playable Classes:</li>
-            </ul>
-            <div style="font-size:0.85rem;color:var(--text-dim);margin:8px 0 16px 12px;line-height:1.6;">
-                🩸 Dracula &bull; 😇 Angel &bull; 🥷 Ninja &bull; 🗡️ Samurai &bull; 🔮 Telekinator &bull; 🛡️ Defender &bull; 😡 Rage &bull; 💀 Necromancer &bull; 🧙 Mage &bull; 🩺 Doctor &bull; 🎯 Piercer &bull; 🏹 Archer
-            </div>
+        <div class="overlay-box help-content">
+            <h2>How to play</h2>
 
-            <h3>🃏 Event Card Drop Probabilities</h3>
-            <p style="font-size:0.85rem;color:var(--text-dim);margin-bottom:8px;">When picking up an event tile, cards drop with the following chances:</p>
-            <div style="overflow-x:auto;margin-bottom:18px;">
-                <table class="help-probability-table" style="width:100%;border-collapse:collapse;text-align:center;font-size:0.85rem;">
-                    <thead>
-                        <tr style="border-bottom:1px solid var(--border);color:var(--text-dim);">
-                            <th style="text-align:left;padding:6px 8px;">Card</th>
-                            <th style="padding:6px 8px;">Rarity</th>
-                            <th style="padding:6px 8px;">Drop Rate</th>
-                            <th style="text-align:left;padding:6px 8px;">Effect</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${cardRowsHTML}
-                    </tbody>
+            <h3>Your turn</h3>
+            <ul>
+                <li>Your dice roll at the start of every turn. Each die can move up to its roll, and its face value is its damage.</li>
+                <li>Click one of your dice, then click a lit tile to move or a red tile to attack.</li>
+                <li>Every die starts with <strong>50, 75 or 100 HP</strong>, depending on match settings. Destroy all enemy dice to win.</li>
+            </ul>
+
+            <h3>Arena rhythm</h3>
+            <ul>
+                <li><strong>Every 3 waves</strong>, glowing crystals appear. Step on one to draw a card (hand limit 3, or 4 with a Defender, Samurai or Doctor).</li>
+                <li><strong>Every 4 waves</strong>, pick one skill upgrade from three choices.</li>
+                <li><strong>Every 5 waves</strong>, a random arena event shakes things up.</li>
+            </ul>
+
+            <h3>Cards</h3>
+            <div style="overflow-x:auto;">
+                <table class="help-probability-table">
+                    <thead><tr><th>Card</th><th>Rarity</th><th>Drop rate</th><th>Effect</th></tr></thead>
+                    <tbody>${cardRowsHTML}</tbody>
                 </table>
             </div>
 
-            <h3>⚡ Roguelike Upgrades (Every 4 Waves)</h3>
-            <p>Choose 1 of 3 random skill level-ups to empower your dice with new abilities!</p>
-
-            <h3>✨ Event Tiles (Every 3 Waves)</h3>
-            <p>Sparkling tiles spawn on empty hexes. Step on them or push enemies onto them to pick up cards (Max 3 in hand, or 4 with Defender/Samurai/Doctor).</p>
-
-            <h3>⚡ Arena Blitz Events (Every 5 Waves - 16.6% Each)</h3>
-            <ul>
-                <li><strong>🌪️ Tornado (16.6%):</strong> Randomizes all dice positions.</li>
-                <li><strong>🕳️ Void Tiles (16.6%):</strong> 5-8 adjacent tiles collapse into void for 3 waves.</li>
-                <li><strong>🔥 Burning Tiles (16.6%):</strong> 3-5 tiles burn for 3 waves (3 damage on touch).</li>
-                <li><strong>🌿 Vine Trap (16.6%):</strong> 2 tiles sprout vines (traps dice on touch for 2 waves).</li>
-                <li><strong>🐝 Bee Attack (16.6%):</strong> 5 bees chase nearest die (5 damage & -1 move).</li>
-                <li><strong>🧙 Magician (16.6%):</strong> Grants 2 random cards to everyone.</li>
+            <h3>Arena events</h3>
+            <ul class="blitz-list">
+                <li><strong>Upheaval.</strong> Tornado throws every die, an alien saucer teleports a few, or an earthquake slides the whole arena one tile.</li>
+                <li><strong>Blocked ground.</strong> 5 to 8 tiles become a void, a mountain or an acid pool for 3 waves.</li>
+                <li><strong>Hazard tiles.</strong> Fire (3 damage), spikes (4 damage) or a biohazard leak (2 damage and no healing).</li>
+                <li><strong>Snares.</strong> Vines root, Medusa's gaze petrifies, snowstorm ice ends your move and slows you.</li>
+                <li><strong>Invaders.</strong> Bees sting and slow, mummies hit hard and curse healing, robots hunt the weakest die.</li>
+                <li><strong>Magician.</strong> Both sides draw 2 cards.</li>
             </ul>
-            <div style="text-align:center;margin-top:16px;">
-                <button class="overlay-btn" onclick="hideOverlay();">Close</button>
-            </div>
+            <div class="overlay-actions"><button class="clay-btn teal" onclick="hideOverlay();">Got it</button></div>
         </div>
     `);
 }
@@ -508,147 +542,79 @@ function openHelpModal() {
 // ==========================================================
 // STATS PANEL & MATCH SETTINGS MODAL
 // ==========================================================
-let currentStatsTab = 'dealt'; // 'dealt', 'taken', 'heal'
-let statsPanelCollapsed = false;
+let currentStatsTab = 'dealt'; // 'dealt', 'taken', 'heal', 'log'
 
 function toggleStatsPanel() {
     const p = document.getElementById('stats-panel-widget');
-    const btn = document.getElementById('stats-toggle-btn');
-    if (!p) return;
-    statsPanelCollapsed = !statsPanelCollapsed;
-    if (statsPanelCollapsed) {
-        p.classList.add('collapsed');
-        if (btn) btn.textContent = '▶';
-    } else {
-        p.classList.remove('collapsed');
-        if (btn) btn.textContent = '◀';
-    }
+    if (p) p.classList.toggle('open');
 }
 
 function switchStatsTab(tab) {
     currentStatsTab = tab;
     ['dealt', 'taken', 'heal', 'log'].forEach(t => {
         const btn = document.getElementById(`tab-stat-${t}`);
-        if (btn) {
-            if (t === tab) btn.classList.add('active');
-            else btn.classList.remove('active');
-        }
+        if (btn) btn.classList.toggle('active', t === tab);
     });
     updateStatsDisplay();
+}
+
+function statRowsHTML(pDice, data, maxVal, color, suffix) {
+    return pDice.map((d, i) => {
+        const val = data[d.id] || 0;
+        const pct = Math.round((val / maxVal) * 100);
+        return `
+            <div class="stat-row-item">
+                <div class="stat-row-label">
+                    <span>${classBadge(d.archetype, 'sm')}${dieDisplayName(d, i).name}</span>
+                    <span>${val} ${suffix}</span>
+                </div>
+                <div class="stat-bar-bg"><div class="stat-bar-fill" style="width:${pct}%;background:${color};"></div></div>
+            </div>
+        `;
+    }).join('');
 }
 
 function updateStatsDisplay() {
     const area = document.getElementById('stats-content-area');
     if (!area || !game.stats) return;
-
     const pDice = game.playerDice || [];
-    const colors = ['#34d399', '#60a5fa', '#f59e0b']; // D1, D2, D3
 
-    if (currentStatsTab === 'dealt') {
-        const data = game.stats.damageDealt || { p1: 0, p2: 0, p3: 0, total: 0 };
-        const maxVal = Math.max(1, data.total || (data.p1 + data.p2 + data.p3));
-        const rowsHTML = pDice.map((d, i) => {
-            const val = data[d.id] || 0;
-            const pct = Math.round((val / maxVal) * 100);
-            return `
-                <div class="stat-row-item">
-                    <div class="stat-row-label">
-                        <span>${d.icon} D${i + 1} (${d.archetype.toUpperCase()})</span>
-                        <span style="color:#fb7185">${val} DMG</span>
-                    </div>
-                    <div class="stat-bar-bg">
-                        <div class="stat-bar-fill" style="width:${pct}%;background:${colors[i % 3]};"></div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
+    if (currentStatsTab === 'dealt' || currentStatsTab === 'taken') {
+        const isDealt = currentStatsTab === 'dealt';
+        const data = (isDealt ? game.stats.damageDealt : game.stats.damageTaken) || { total: 0 };
+        const maxVal = Math.max(1, data.total || 0);
         area.innerHTML = `
-            <div class="stat-bar-group">
-                ${rowsHTML}
-            </div>
-            <div class="stat-total-summary">Total Damage Dealt: <strong style="color:#fb7185">${data.total || 0}</strong></div>
-        `;
-    } else if (currentStatsTab === 'taken') {
-        const data = game.stats.damageTaken || { p1: 0, p2: 0, p3: 0, total: 0 };
-        const maxVal = Math.max(1, data.total || (data.p1 + data.p2 + data.p3));
-        const rowsHTML = pDice.map((d, i) => {
-            const val = data[d.id] || 0;
-            const pct = Math.round((val / maxVal) * 100);
-            return `
-                <div class="stat-row-item">
-                    <div class="stat-row-label">
-                        <span>${d.icon} D${i + 1} (${d.archetype.toUpperCase()})</span>
-                        <span style="color:#f43f5e">${val} Taken</span>
-                    </div>
-                    <div class="stat-bar-bg">
-                        <div class="stat-bar-fill" style="width:${pct}%;background:#f43f5e;"></div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
-        area.innerHTML = `
-            <div class="stat-bar-group">
-                ${rowsHTML}
-            </div>
-            <div class="stat-total-summary">Total Damage Taken: <strong style="color:#f43f5e">${data.total || 0}</strong></div>
+            <div class="stat-bar-group">${statRowsHTML(pDice, data, maxVal, isDealt ? 'var(--gold)' : 'var(--cpu)', 'dmg')}</div>
+            <div class="stat-total-summary"><span>${isDealt ? 'Damage dealt' : 'Damage taken'}</span><strong>${data.total || 0}</strong></div>
         `;
     } else if (currentStatsTab === 'heal') {
-        const data = game.stats.healDone || { p1: 0, p2: 0, p3: 0, cards: 0, total: 0 };
-        const maxVal = Math.max(1, data.total || (data.p1 + data.p2 + data.p3 + data.cards));
-        const rowsHTML = pDice.map((d, i) => {
-            const val = data[d.id] || 0;
-            const pct = Math.round((val / maxVal) * 100);
-            return `
-                <div class="stat-row-item">
-                    <div class="stat-row-label">
-                        <span>${d.icon} D${i + 1} (${d.archetype.toUpperCase()})</span>
-                        <span style="color:#34d399">+${val} HP</span>
-                    </div>
-                    <div class="stat-bar-bg">
-                        <div class="stat-bar-fill" style="width:${pct}%;background:#34d399;"></div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-
+        const data = game.stats.healDone || { cards: 0, total: 0 };
+        const maxVal = Math.max(1, data.total || 0);
         const cardHealVal = data.cards || 0;
-        const cardPct = Math.round((cardHealVal / maxVal) * 100);
-        const cardRow = `
-            <div class="stat-row-item">
-                <div class="stat-row-label">
-                    <span>🩹 Heal Cards</span>
-                    <span style="color:#34d399">+${cardHealVal} HP</span>
-                </div>
-                <div class="stat-bar-bg">
-                    <div class="stat-bar-fill" style="width:${cardPct}%;background:#10b981;"></div>
-                </div>
-            </div>
-        `;
-
         area.innerHTML = `
             <div class="stat-bar-group">
-                ${rowsHTML}
-                ${cardRow}
+                ${statRowsHTML(pDice, data, maxVal, 'var(--player)', 'hp')}
+                <div class="stat-row-item">
+                    <div class="stat-row-label"><span>${iconSVG('heart')}Heal cards</span><span>${cardHealVal} hp</span></div>
+                    <div class="stat-bar-bg"><div class="stat-bar-fill" style="width:${Math.round((cardHealVal / maxVal) * 100)}%;background:var(--player-lip);"></div></div>
+                </div>
             </div>
-            <div class="stat-total-summary">Total HP Restored: <strong style="color:#34d399">+${data.total || 0}</strong></div>
+            <div class="stat-total-summary"><span>HP restored</span><strong>${data.total || 0}</strong></div>
         `;
     } else if (currentStatsTab === 'log') {
         const logs = game.combatLog || [];
         if (logs.length === 0) {
-            area.innerHTML = `<div style="color:var(--text-dim);font-size:0.8rem;text-align:center;padding:25px 0;">No combat actions recorded yet.</div>`;
+            area.innerHTML = `<div class="stats-empty">Nothing has happened yet. Moves and hits will show up here.</div>`;
         } else {
-            const logsHTML = logs.map(entry => `
-                <div class="combat-log-item" style="border-left: 2.5px solid ${entry.color || '#38bdf8'};">
-                    <div class="combat-log-meta">
-                        <span class="combat-log-wave">W${entry.wave}</span>
-                        <span class="combat-log-time">${entry.time}</span>
+            area.innerHTML = `<div class="combat-log-container">${logs.map(entry => `
+                <div class="combat-log-item">
+                    <span class="log-dot" style="background:${entry.color || 'var(--sky)'}"></span>
+                    <div>
+                        <div class="combat-log-meta">Wave ${entry.wave}, ${entry.time}</div>
+                        <div class="combat-log-text">${entry.text}</div>
                     </div>
-                    <div class="combat-log-text">${entry.icon} ${entry.text}</div>
                 </div>
-            `).join('');
-            area.innerHTML = `<div class="combat-log-container">${logsHTML}</div>`;
+            `).join('')}</div>`;
         }
     }
 }
@@ -659,20 +625,12 @@ function openGameSettingsModal() {
 
     window._selectSettingHp = function (hp) {
         selectedHp = hp;
-        document.querySelectorAll('.hp-opt-btn').forEach(b => {
-            if (parseInt(b.dataset.hp) === hp) b.classList.add('active');
-            else b.classList.remove('active');
-        });
+        document.querySelectorAll('.hp-opt-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.hp) === hp));
     };
-
     window._selectSettingDiff = function (diff) {
         selectedDiff = diff;
-        document.querySelectorAll('.diff-opt-btn').forEach(b => {
-            if (b.dataset.diff === diff) b.classList.add('active');
-            else b.classList.remove('active');
-        });
+        document.querySelectorAll('.diff-opt-btn').forEach(b => b.classList.toggle('active', b.dataset.diff === diff));
     };
-
     window._confirmSettingsAndStart = function () {
         gameSettings.startHp = selectedHp;
         gameSettings.difficulty = selectedDiff;
@@ -680,47 +638,188 @@ function openGameSettingsModal() {
         startGame();
     };
 
+    const hpOpt = (hp, desc) => `<button class="settings-opt-btn hp-opt-btn ${selectedHp === hp ? 'active' : ''}" data-hp="${hp}" onclick="_selectSettingHp(${hp})">
+        <div class="settings-opt-name">${hp} HP</div><div class="settings-opt-desc">${desc}</div></button>`;
+    const diffOpt = (id, name, desc) => `<button class="settings-opt-btn diff-opt-btn ${selectedDiff === id ? 'active' : ''}" data-diff="${id}" onclick="_selectSettingDiff('${id}')">
+        <div class="settings-opt-name">${name}</div><div class="settings-opt-desc">${desc}</div></button>`;
+
     showOverlay(`
         <div class="overlay-box settings-modal-box">
-            <h2>⚙️ MATCH SETUP & SETTINGS</h2>
-            <p style="color:var(--text-dim);font-size:0.85rem;margin-bottom:12px;">Customize starting HP and AI difficulty before battle:</p>
-            
-            <div class="settings-section-title">❤️ Starting Dice HP</div>
+            <h2>Match setup</h2>
+            <p class="overlay-lead" style="margin:0;">Choose how long the fight lasts and how sharp the computer plays.</p>
+
+            <div class="settings-section-title">Starting HP per die</div>
             <div class="settings-options-grid">
-                <div class="settings-opt-btn hp-opt-btn ${selectedHp === 50 ? 'active' : ''}" data-hp="50" onclick="_selectSettingHp(50)">
-                    <div class="settings-opt-name">50 HP</div>
-                    <div class="settings-opt-desc">Standard Match</div>
-                </div>
-                <div class="settings-opt-btn hp-opt-btn ${selectedHp === 75 ? 'active' : ''}" data-hp="75" onclick="_selectSettingHp(75)">
-                    <div class="settings-opt-name">75 HP</div>
-                    <div class="settings-opt-desc">Extended Battle</div>
-                </div>
-                <div class="settings-opt-btn hp-opt-btn ${selectedHp === 100 ? 'active' : ''}" data-hp="100" onclick="_selectSettingHp(100)">
-                    <div class="settings-opt-name">100 HP</div>
-                    <div class="settings-opt-desc">Endurance Mode</div>
-                </div>
+                ${hpOpt(50, 'Quick match')}
+                ${hpOpt(75, 'Longer fights')}
+                ${hpOpt(100, 'Endurance')}
             </div>
 
-            <div class="settings-section-title">🧠 AI Difficulty Mode</div>
+            <div class="settings-section-title">Computer difficulty</div>
             <div class="settings-options-grid">
-                <div class="settings-opt-btn diff-opt-btn ${selectedDiff === 'easy' ? 'active' : ''}" data-diff="easy" onclick="_selectSettingDiff('easy')">
-                    <div class="settings-opt-name">🟢 Easy</div>
-                    <div class="settings-opt-desc">Standard Bot AI</div>
-                </div>
-                <div class="settings-opt-btn diff-opt-btn ${selectedDiff === 'medium' ? 'active' : ''}" data-diff="medium" onclick="_selectSettingDiff('medium')">
-                    <div class="settings-opt-name">🟡 Medium</div>
-                    <div class="settings-opt-desc">Simulates Moves</div>
-                </div>
-                <div class="settings-opt-btn diff-opt-btn ${selectedDiff === 'hard' ? 'active' : ''}" data-diff="hard" onclick="_selectSettingDiff('hard')">
-                    <div class="settings-opt-name">🔴 Hard</div>
-                    <div class="settings-opt-desc">Smart + Loaded Dice (4-6)</div>
-                </div>
+                ${diffOpt('easy', 'Easy', 'Picks moves at random')}
+                ${diffOpt('medium', 'Medium', 'Plans attacks and positions')}
+                ${diffOpt('hard', 'Hard', 'Plans ahead, rolls high more often')}
             </div>
 
-            <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-                <button class="overlay-btn" style="background:rgba(255,255,255,0.08);margin:0;" onclick="hideOverlay()">Back</button>
-                <button class="overlay-btn restart" style="margin:0;" onclick="_confirmSettingsAndStart()">⚔️ Start Battle</button>
+            <div class="overlay-actions" style="justify-content:flex-end;">
+                <button class="clay-btn plain" onclick="hideOverlay()">Back</button>
+                <button class="clay-btn teal" onclick="_confirmSettingsAndStart()">Start battle</button>
             </div>
         </div>
     `);
+}
+
+// ==========================================================
+// 3D DICE TUMBLE (CSS cubes thrown onto the board)
+// ==========================================================
+const PIP_LAYOUT = {
+    1: [[50, 50]],
+    2: [[72, 28], [28, 72]],
+    3: [[72, 28], [50, 50], [28, 72]],
+    4: [[28, 28], [72, 28], [28, 72], [72, 72]],
+    5: [[28, 28], [72, 28], [50, 50], [28, 72], [72, 72]],
+    6: [[28, 26], [72, 26], [28, 50], [72, 50], [28, 74], [72, 74]],
+};
+// face value -> cube rotation that brings that face to the front
+const FACE_ROT = { 1: [0, 0], 2: [-90, 0], 3: [0, -90], 4: [0, 90], 5: [90, 0], 6: [0, 180] };
+
+function diceCubeHTML(team, value, archetype) {
+    const shown = ((value - 1) % 6) + 1;
+    const cd = CLASS_DICE[archetype];
+    const style = cd ? `style="--face:${cd.body};--face-emboss:${cd.light};--pip:${cd.pip}"` : '';
+    const mark = archetype ? `<span class="dice-mark">${iconSVG(archetype)}</span>` : '';
+    const faces = [1, 2, 3, 4, 5, 6].map(f => {
+        const inner = (f === shown && value > 6)
+            ? `<span class="dice-num">${value}</span>`
+            : PIP_LAYOUT[f].map(([x, y]) => `<i style="left:${x}%;top:${y}%"></i>`).join('');
+        return `<div class="dice-face f${f}">${mark}${inner}</div>`;
+    }).join('');
+    return `<div class="dice-cube-wrap ${team}" ${style}>
+        <div class="dice-shadow"></div>
+        <div class="dice-cube-view"><div class="dice-cube">
+            <div class="dice-core a"></div><div class="dice-core b"></div><div class="dice-core c"></div>
+            ${faces}
+        </div></div>
+    </div>`;
+}
+
+// Throws cubes into `container` and resolves when they have settled on `values`
+function tumbleDice(container, values, team, { dur = 1150, spread = 1, from = 'left', archetypes = [] } = {}) {
+    if (!container) return Promise.resolve();
+    container.innerHTML = values.map((v, i) => diceCubeHTML(team, v, archetypes[i])).join('');
+    const wraps = [...container.querySelectorAll('.dice-cube-wrap')];
+    if (!wraps[0] || typeof wraps[0].animate !== 'function') return Promise.resolve();
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    const anims = wraps.map((wrap, i) => {
+        const v = values[i];
+        const [tx, ty] = FACE_ROT[((v - 1) % 6) + 1];
+        const cube = wrap.querySelector('.dice-cube');
+        const shadow = wrap.querySelector('.dice-shadow');
+        const d = reduce ? 1 : dur + i * 120;
+        const sx = (from === 'left' ? -1 : 1) * (220 + i * 40) * spread;
+        const spinX = tx + 360 * (2 + ((i + v) % 2)) * (i % 2 ? -1 : 1);
+        const spinY = ty + 360 * (3 + (v % 2));
+        const spinZ = (i % 2 ? 1 : -1) * 360;
+        cube.style.transform = `rotateX(${tx}deg) rotateY(${ty}deg)`;
+        const ease = 'cubic-bezier(0.22, 0.7, 0.3, 1)';
+        cube.animate([
+            { transform: `rotateX(${spinX}deg) rotateY(${spinY}deg) rotateZ(${spinZ}deg)` },
+            { transform: `rotateX(${tx + (spinX - tx) * 0.12}deg) rotateY(${ty + (spinY - ty) * 0.1}deg) rotateZ(${spinZ * 0.08}deg)`, offset: 0.72 },
+            { transform: `rotateX(${tx}deg) rotateY(${ty}deg) rotateZ(0deg)` },
+        ], { duration: d, easing: ease, fill: 'both' });
+        shadow.animate([
+            { opacity: 0, transform: 'scale(0.4)' },
+            { opacity: 1, transform: 'scale(1)', offset: 0.45 },
+            { opacity: 0.6, transform: 'scale(0.7)', offset: 0.58 },
+            { opacity: 1, transform: 'scale(1)' },
+        ], { duration: d, fill: 'both' });
+        // throw arc with two small bounces
+        return wrap.animate([
+            { transform: `translate(${sx}px, -140px)`, offset: 0 },
+            { transform: `translate(${sx * 0.2}px, 0px)`, offset: 0.45, easing: 'ease-out' },
+            { transform: `translate(${sx * 0.08}px, -34px)`, offset: 0.6, easing: 'ease-in' },
+            { transform: `translate(${sx * 0.02}px, 0px)`, offset: 0.76, easing: 'ease-out' },
+            { transform: `translate(0px, -9px)`, offset: 0.86, easing: 'ease-in' },
+            { transform: 'translate(0px, 0px)', offset: 1 },
+        ], { duration: d, fill: 'both' });
+    });
+
+    if (!reduce && typeof SFX !== 'undefined' && SFX.diceHit) {
+        wraps.forEach((_, i) => {
+            const d = dur + i * 120;
+            [0.45, 0.76, 0.93].forEach((o, k) => setTimeout(() => SFX.diceHit(1 - k * 0.3), d * o));
+        });
+    }
+    // never let the game wait on an animation forever (e.g. background tabs pause animations)
+    const longest = reduce ? 50 : dur + wraps.length * 120 + 150;
+    return Promise.race([
+        Promise.all(anims.map(a => a.finished.catch(() => {}))),
+        new Promise(r => setTimeout(r, longest)),
+    ]);
+}
+
+// Board-level roll: cubes land over the arena, then fade away
+async function playBoardRoll(values, team, archetypes = []) {
+    const board = document.getElementById('canvas-wrapper');
+    if (!board || !document.createElement) return;
+    const stage = document.createElement('div');
+    stage.className = `roll-stage ${team}`;
+    board.appendChild(stage);
+    const fast = typeof fastAutoMode !== 'undefined' && fastAutoMode;
+    await tumbleDice(stage, values, team, { dur: fast ? 450 : 1150, from: team === 'player' ? 'left' : 'right', archetypes });
+    await new Promise(r => setTimeout(r, fast ? 120 : 520));
+    stage.classList.add('leaving');
+    setTimeout(() => stage.remove(), 300);
+}
+
+// ==========================================================
+// DIE TOOLTIP (hover a die on the board)
+// ==========================================================
+function showDieTooltip(die, clientX, clientY) {
+    const board = document.querySelector('.board');
+    if (!board) return;
+    let tip = document.getElementById('die-tooltip');
+    if (!tip) {
+        tip = document.createElement('div');
+        tip.id = 'die-tooltip';
+        board.appendChild(tip);
+    }
+    if (tip.dataset.dieId !== die.id || tip.dataset.hp !== String(die.hp)) {
+        const maxH = die.maxHp || gameSettings.startHp || MAX_HP;
+        const pct = Math.max(0, Math.min(1, die.hp / maxH));
+        const mine = die.team === 'player';
+        tip.dataset.dieId = die.id;
+        tip.dataset.hp = String(die.hp);
+        tip.className = mine ? 'player' : 'cpu';
+        tip.innerHTML = `
+            <div class="tip-head">
+                ${classBadge(die.archetype, 'lg')}
+                <div>
+                    <div class="tip-name">${dieDisplayName(die, 0).name}</div>
+                    <div class="tip-team">${mine ? 'Your die' : 'Enemy die'}${die.isMindControlled ? ', mind-controlled' : ''}</div>
+                </div>
+                <div class="die-dmg">${getDieEffectiveDamage(die)}<small>dmg</small></div>
+            </div>
+            <div class="hp-line">
+                <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${mine ? 'var(--player)' : 'var(--cpu)'}"></div></div>
+                <span class="hp-num">${Math.max(0, die.hp)}/${maxH}</span>
+            </div>
+            <div class="die-tags">${dieTagsHTML(die)}</div>
+            ${dieSkillsHTML(die)}
+        `;
+    }
+    const rect = board.getBoundingClientRect();
+    let x = clientX - rect.left + 18, y = clientY - rect.top + 18;
+    const w = tip.offsetWidth || 260, h = tip.offsetHeight || 160;
+    if (x + w > rect.width) x = clientX - rect.left - w - 18;
+    if (y + h > rect.height) y = Math.max(0, rect.height - h - 8);
+    tip.style.transform = `translate(${Math.max(0, x)}px, ${y}px)`;
+    tip.classList.add('show');
+}
+
+function hideDieTooltip() {
+    const tip = document.getElementById('die-tooltip');
+    if (tip) tip.classList.remove('show');
 }

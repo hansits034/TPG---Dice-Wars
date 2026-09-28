@@ -6,7 +6,8 @@ async function triggerRoguelikeUpgrade() {
     SFX.powerUp();
 
     // --- PLAYER UPGRADE ---
-    const playerAlive = aliveDice('player');
+    // Mind-controlled enemies and temporary clones are not eligible for permanent upgrades
+    const playerAlive = aliveDice('player').filter(d => !d.isMindControlled && !d.isCloneDie);
     const availableUpgrades = [];
 
     playerAlive.forEach((die, index) => {
@@ -23,6 +24,7 @@ async function triggerRoguelikeUpgrade() {
         if (fastAutoMode) {
             const choice = choices[0];
             choice.skill.curLvl++;
+            fxLevelUp(choice.die);
             addFloatingText(`✨ ${choice.skill.name} Lvl ${choice.skill.curLvl}!`, choice.die.q, choice.die.r, '#fbbf24', 20);
             SFX.powerUp();
         } else {
@@ -30,6 +32,7 @@ async function triggerRoguelikeUpgrade() {
                 window._chooseUpgrade = function(idx) {
                     const choice = choices[idx];
                     choice.skill.curLvl++;
+                    fxLevelUp(choice.die);
                     addFloatingText(`✨ ${choice.skill.name} Lvl ${choice.skill.curLvl}!`, choice.die.q, choice.die.r, '#fbbf24', 20);
                     SFX.powerUp();
                     hideOverlay();
@@ -38,18 +41,19 @@ async function triggerRoguelikeUpgrade() {
 
                 const html = `
                     <div class="overlay-box">
-                        <h2>⚡ ROGUELIKE UPGRADE ⚡</h2>
-                        <p style="color:var(--text-dim);margin-bottom:12px;">Wave ${game.wave} reached! Pick 1 skill upgrade for your dice:</p>
+                        <div class="overlay-icon gold">${iconSVG('star')}</div>
+                        <h2>Choose an upgrade</h2>
+                        <p>Wave ${game.wave} reached. Pick one skill to level up.</p>
                         <div class="upgrade-cards-grid">
                             ${choices.map((c, i) => `
-                                <div class="upgrade-card-item" onclick="_chooseUpgrade(${i})">
-                                    <span class="upgrade-icon">${c.die.icon}</span>
+                                <button class="upgrade-card-item" onclick="_chooseUpgrade(${i})">
+                                    ${classBadge(c.die.archetype, 'lg')}
                                     <div class="upgrade-info">
-                                        <div class="upgrade-name">D${c.dieIndex} (${c.die.archetype.toUpperCase()}) - ${c.skill.name}</div>
+                                        <div class="upgrade-name">${c.skill.name}<small>${archName(c.die.archetype)}, die ${c.dieIndex}</small></div>
                                         <div class="upgrade-desc">${c.skill.desc}</div>
                                     </div>
-                                    <span class="upgrade-badge">Lvl ${c.skill.curLvl + 1}/${c.skill.maxLvl}</span>
-                                </div>
+                                    <span class="upgrade-badge">${c.skill.curLvl === 0 ? 'Unlock' : 'Level ' + (c.skill.curLvl + 1)}</span>
+                                </button>
                             `).join('')}
                         </div>
                     </div>
@@ -60,7 +64,7 @@ async function triggerRoguelikeUpgrade() {
     }
 
     // --- CPU AUTO-UPGRADE ---
-    const cpuAlive = aliveDice('cpu');
+    const cpuAlive = aliveDice('cpu').filter(d => !d.isMindControlled && !d.isCloneDie);
     const cpuUpgrades = [];
     cpuAlive.forEach(die => {
         die.skills.forEach(skill => {
@@ -72,6 +76,7 @@ async function triggerRoguelikeUpgrade() {
     if (cpuUpgrades.length > 0) {
         const pick = cpuUpgrades[Math.floor(Math.random() * cpuUpgrades.length)];
         pick.skill.curLvl++;
+        fxLevelUp(pick.die);
         addFloatingText(`🔴 CPU: ${pick.skill.name} Lvl ${pick.skill.curLvl}!`, pick.die.q, pick.die.r, '#ef4444', 18);
         SFX.powerUp();
         await delay(800);
@@ -90,17 +95,19 @@ function spawnEventTiles() {
     const shuffled = available.sort(() => Math.random() - 0.5);
     const count = Math.min(EVENT_TILES_PER_SPAWN, shuffled.length);
 
+    const now = performance.now();
     for (let i = 0; i < count; i++) {
-        game.eventTiles.set(hKey(shuffled[i].q, shuffled[i].r), { wavesLeft: 2 });
+        // crystals drop in one after another (see drawEventCrystal)
+        game.eventTiles.set(hKey(shuffled[i].q, shuffled[i].r), { wavesLeft: 2, bornAt: now + i * 220 });
+        const h = shuffled[i];
+        matchTimeout(() => {
+            const p = hexScreen(h.q, h.r);
+            spawnParticles(p.x, p.y, '#F2B84B', 14, 2, 900, 3);
+            SFX.cardGet();
+        }, i * 220 + 450);
     }
 
-    if (count > 0) {
-        setMessage(`✨ ${count} event tiles appeared on the arena!`);
-        for (let i = 0; i < count; i++) {
-            const p = hexToPixel(shuffled[i].q, shuffled[i].r);
-            spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#fbbf24', 15, 2, 1000, 3);
-        }
-    }
+    if (count > 0) setMessage(`${count} card crystals dropped onto the arena. Step on one to draw a card.`);
 }
 
 function checkEventTilePickup(die) {
@@ -130,91 +137,297 @@ function checkEventTilePickup(die) {
     updateCardHand();
 }
 
+function shakeBoard(ms = 450) {
+    const wrap = document.getElementById('canvas-wrapper');
+    if (!wrap) return;
+    wrap.classList.remove('shake');
+    void wrap.offsetWidth;
+    wrap.classList.add('shake');
+    setTimeout(() => wrap.classList.remove('shake'), ms);
+}
+
+// ---------- hazard variants ----------
+// Damaging tiles (stored in game.burningTiles, `kind` picks the variant)
+const HAZARD_KINDS = {
+    fire:   { dmg: 3, label: 'Burning', color: '#FF8A3D' },
+    spikes: { dmg: 4, label: 'Spikes', color: '#C9C4DA' },
+    bio:    { dmg: 2, label: 'Toxic', color: '#9BE35A', poison: 2 },
+};
+// Snare tiles (stored in game.vineTraps)
+const SNARE_KINDS = {
+    vines:  { text: 'Rooted!', color: '#9BE07A' },
+    medusa: { text: 'Petrified!', color: '#C9C4DA' },
+    snow:   { text: 'Chilled!', color: '#BFE6FF' },
+};
+// Roaming creatures (stored in game.bees)
+const SWARM_KINDS = {
+    bee:   { steps: 2, dmg: 5, label: 'Sting', color: '#F2B84B' },
+    mummy: { steps: 1, dmg: 7, label: 'Mummy curse', color: '#E9DCC0' },
+    robot: { steps: 2, dmg: 6, label: 'Laser', color: '#7EC8F2' },
+};
+const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
+
+function applySwarmHit(unit, die) {
+    const k = SWARM_KINDS[unit.kind || 'bee'];
+    applyIndirectDamage(die, k.dmg, k.label, k.color);
+    if ((unit.kind || 'bee') === 'bee') die.moveDebuff = Math.max(die.moveDebuff, 1);
+    if (unit.kind === 'mummy') { die.antiHealTurns = Math.max(die.antiHealTurns, 2); addFloatingText('Cursed: no healing', die.q, die.r, '#E9DCC0', 14); }
+    if (unit.kind === 'robot') { const p = dieFxPos(die); fxRing(p.x, p.y + HEX_SIZE * 0.3, '#7EC8F2', HEX_SIZE * 1.2, 400, 4); }
+    SFX.attack();
+    updateDiceHP();
+}
+
+// Remembers where a creature came from so the renderer can animate its step
+function stepCreature(unit, q, r) {
+    unit.fromQ = unit.q; unit.fromR = unit.r; unit.movedAt = performance.now();
+    unit.q = q; unit.r = r;
+}
+
+// Shift every tile feature and unit one hex in `dir` (earthquake)
+function shiftArena(dir) {
+    const shiftMap = (map) => {
+        if (!map) return map;
+        const out = new Map();
+        for (const [k, v] of map) {
+            const { q, r } = parseKey(k);
+            const nq = q + dir.q, nr = r + dir.r;
+            if (isValidHex(nq, nr)) out.set(hKey(nq, nr), v);
+        }
+        return out;
+    };
+    game.eventTiles = shiftMap(game.eventTiles);
+    game.burningTiles = shiftMap(game.burningTiles);
+    game.vineTraps = shiftMap(game.vineTraps);
+    game.bearTraps = shiftMap(game.bearTraps);
+    game.blocks = shiftMap(game.blocks);
+    game.voidTiles = shiftMap(game.voidTiles);
+
+    // dice furthest along the direction move first so they don't block each other
+    const dice = allDice().filter(d => d.hp > 0).sort((a, b) => (b.q * dir.q + b.r * dir.r) - (a.q * dir.q + a.r * dir.r));
+    const moved = [];
+    for (const d of dice) {
+        const nq = d.q + dir.q, nr = d.r + dir.r;
+        if (!isValidHex(nq, nr) || isBlocked(nq, nr) || getDieAt(nq, nr)) continue;
+        const oq = d.q, or = d.r;
+        d.q = nq; d.r = nr; d.movedThisWave = true;
+        startSlide(d, oq, or, 600, 0.15);
+        moved.push({ d, oq, or });
+    }
+    for (const unit of [...(game.bees || []), ...(game.zombies || [])]) {
+        const nq = unit.q + dir.q, nr = unit.r + dir.r;
+        if (isValidHex(nq, nr)) stepCreature(unit, nq, nr);
+    }
+    return moved;
+}
+
+// Arena events: a short banner, then one of three variants plays out on the board
 async function triggerArenaBlitz() {
     const blitzTypes = ['tornado', 'void', 'burning', 'vine', 'bees', 'magician'];
     const chosen = blitzTypes[Math.floor(Math.random() * blitzTypes.length)];
+    const now = () => performance.now();
 
     switch (chosen) {
         case 'tornado': {
-            showBlitzAnnouncement('🌪️ TORNADO BLITZ!', 'All dice positions are randomized!');
-            await delay(1500);
-            const active = allDice().filter(d => d.hp > 0);
-            const available = allHexes.filter(h => !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
-            active.forEach((d, i) => {
-                if (available[i]) {
+            const variant = pickOne(['tornado', 'alien', 'quake']);
+            if (variant === 'tornado') {
+                showBlitzAnnouncement('Tornado', 'Every die gets thrown to a new tile.');
+                await delay(600);
+                addBoardFx('tornado', 2200);
+                SFX.wind();
+                await delay(500);
+                const active = allDice().filter(d => d.hp > 0);
+                const available = allHexes.filter(h => !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
+                const moved = [];
+                active.forEach((d, i) => {
+                    if (!available[i]) return;
                     const oldQ = d.q, oldR = d.r;
-                    d.q = available[i].q;
-                    d.r = available[i].r;
+                    d.q = available[i].q; d.r = available[i].r;
                     d.movedThisWave = true;
-                    const p = hexToPixel(d.q, d.r);
-                    spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#818cf8', 20, 4, 800, 4);
-                    if (typeof applyForcedMoveBleed === 'function') {
-                        applyForcedMoveBleed(d, hexDist(oldQ, oldR, d.q, d.r));
-                    }
+                    startSlide(d, oldQ, oldR, 1000, 1.2, i * 90, true);
+                    moved.push({ d, oldQ, oldR });
+                });
+                await delay(1000 + active.length * 90);
+                for (const { d, oldQ, oldR } of moved) {
+                    const p = hexScreen(d.q, d.r);
+                    spawnParticles(p.x, p.y + HEX_SIZE * 0.3, '#C9A77C', 10, 2, 600, 3);
+                    applyForcedMoveBleed(d, hexDist(oldQ, oldR, d.q, d.r));
                     triggerTileEffectOnDie(d);
                 }
-            });
+            } else if (variant === 'alien') {
+                showBlitzAnnouncement('Alien visit', 'A saucer beams up a few dice and drops them somewhere else.');
+                await delay(600);
+                const victims = allDice().filter(d => d.hp > 0).sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
+                addBoardFx('ufo', 900 + victims.length * 650 + 700);
+                SFX.alien();
+                await delay(700);
+                for (const d of victims) {
+                    const spots = allHexes.filter(h => !isBlocked(h.q, h.r) && !getDieAt(h.q, h.r));
+                    if (!spots.length) break;
+                    const to = pickOne(spots);
+                    const from = dieFxPos(d);
+                    addBoardFx('tractor', 520, { x: from.x, y: from.y });
+                    SFX.teleport();
+                    await delay(380);
+                    const oldQ = d.q, oldR = d.r;
+                    d.q = to.q; d.r = to.r; d.movedThisWave = true;
+                    d.popAt = performance.now();
+                    const p = hexScreen(to.q, to.r);
+                    fxRing(p.x, p.y + HEX_SIZE * 0.25, '#9BE35A', HEX_SIZE * 1.5, 500, 5);
+                    spawnParticles(p.x, p.y, '#C8FF9E', 14, 2.5, 600, 3);
+                    applyForcedMoveBleed(d, hexDist(oldQ, oldR, d.q, d.r));
+                    triggerTileEffectOnDie(d);
+                    updateDiceHP();
+                    await delay(270);
+                }
+                await delay(500);
+            } else {
+                showBlitzAnnouncement('Earthquake', 'The whole arena slides one tile over.');
+                await delay(600);
+                const dir = pickOne(DIRS);
+                addBoardFx('quake', 1600);
+                SFX.quake();
+                shakeBoard(1200);
+                await delay(400);
+                const moved = shiftArena(dir);
+                for (let i = 0; i < 18; i++) {
+                    const h = pickOne(allHexes);
+                    const p = hexScreen(h.q, h.r);
+                    spawnParticles(p.x, p.y + HEX_SIZE * 0.3, '#B89A74', 3, 1.5, 700, 3);
+                }
+                await delay(800);
+                for (const { d, oq, or } of moved) {
+                    applyForcedMoveBleed(d, hexDist(oq, or, d.q, d.r));
+                    triggerTileEffectOnDie(d);
+                }
+            }
+            updateDiceHP();
             break;
         }
         case 'void': {
-            showBlitzAnnouncement('🕳️ VOID TILES BLITZ!', '5-8 tiles collapse into the void for 3 waves!');
-            await delay(1500);
-            const available = allHexes.filter(h => !getDieAt(h.q, h.r)).sort(() => Math.random() - 0.5);
-            const count = Math.floor(Math.random() * 4) + 5; // 5 to 8
-            for (let i = 0; i < Math.min(count, available.length); i++) {
-                game.voidTiles.set(hKey(available[i].q, available[i].r), { wavesLeft: 3 });
+            const variant = pickOne(['hole', 'mountain', 'acid']);
+            const text = {
+                hole: ['Collapse', '5 to 8 tiles fall into the void for 3 waves.'],
+                mountain: ['Rockslide', 'Mountains burst out of 5 to 8 tiles and block them for 3 waves.'],
+                acid: ['Acid flood', 'Acid pools seal off 5 to 8 tiles for 3 waves.'],
+            }[variant];
+            showBlitzAnnouncement(text[0], text[1]);
+            await delay(600);
+            const available = allHexes.filter(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
+            const count = Math.min(Math.floor(Math.random() * 4) + 5, available.length); // 5 to 8
+            if (variant !== 'acid') shakeBoard(900);
+            for (let i = 0; i < count; i++) {
+                const h = available[i];
+                game.voidTiles.set(hKey(h.q, h.r), { wavesLeft: 3, bornAt: now() + i * 110, kind: variant });
+                matchTimeout(() => {
+                    const p = hexScreen(h.q, h.r);
+                    if (variant === 'acid') { spawnParticles(p.x, p.y, '#B6F24A', 12, 2, 700, 3); SFX.bubble(); }
+                    else { spawnParticles(p.x, p.y, variant === 'mountain' ? '#9D99B2' : '#7B6A57', 12, 2.5, 700, 3.5); SFX.crumble(); }
+                }, i * 110 + 250);
             }
+            await delay(count * 110 + 700);
             break;
         }
         case 'burning': {
-            showBlitzAnnouncement('🔥 BURNING TILES BLITZ!', '3-5 tiles catch fire! Crossing them deals 3 damage!');
-            await delay(1500);
+            const variant = pickOne(['fire', 'spikes', 'bio']);
+            const text = {
+                fire: ['Wildfire', '3 to 5 tiles catch fire. Touching them deals 3 damage.'],
+                spikes: ['Spike traps', '3 to 5 tiles sprout spikes. Touching them deals 4 damage.'],
+                bio: ['Biohazard leak', '3 to 5 tiles leak toxin: 2 damage and no healing for 2 turns.'],
+            }[variant];
+            showBlitzAnnouncement(text[0], text[1]);
+            await delay(600);
             const available = allHexes.filter(h => !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
-            const count = Math.floor(Math.random() * 3) + 3;
-            for (let i = 0; i < Math.min(count, available.length); i++) {
-                game.burningTiles.set(hKey(available[i].q, available[i].r), { wavesLeft: 3 });
+            const count = Math.min(Math.floor(Math.random() * 3) + 3, available.length);
+            for (let i = 0; i < count; i++) {
+                const h = available[i];
+                game.burningTiles.set(hKey(h.q, h.r), { wavesLeft: 3, bornAt: now() + i * 160, kind: variant });
+                matchTimeout(() => {
+                    const p = hexScreen(h.q, h.r);
+                    spawnParticles(p.x, p.y, HAZARD_KINDS[variant].color, 14, 2.5, 800, 3);
+                    if (variant === 'spikes') SFX.block(); else if (variant === 'bio') SFX.bubble(); else SFX.ignite();
+                }, i * 160);
             }
-            // If any dice currently stand on newly spawned burning tiles, trigger damage immediately
+            await delay(count * 160 + 700);
+            // Dice already standing on a new hazard take damage now
             for (const d of allDice()) {
                 if (d.hp > 0) triggerTileEffectOnDie(d);
             }
             break;
         }
         case 'vine': {
-            showBlitzAnnouncement('🌿 VINE TRAP BLITZ!', '2 tiles sprout vines! Dice on them are trapped for 2 waves!');
-            await delay(1500);
+            const variant = pickOne(['vines', 'medusa', 'snow']);
+            const text = {
+                vines: ['Vines', '2 tiles sprout vines that root any die for 2 turns.'],
+                medusa: ["Medusa's gaze", '2 tiles turn to stone. Dice on them are petrified for a turn.'],
+                snow: ['Snowstorm', '3 tiles freeze over. Stepping on them ends your move and slows you.'],
+            }[variant];
+            showBlitzAnnouncement(text[0], text[1]);
+            await delay(600);
+            if (variant === 'snow') { addBoardFx('snowfall', 3200); SFX.wind(); }
+            if (variant === 'medusa') { addBoardFx('medusa', 1800); SFX.magic(); }
             const available = allHexes.filter(h => !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
-            for (let i = 0; i < Math.min(2, available.length); i++) {
-                const k = hKey(available[i].q, available[i].r);
-                game.vineTraps.set(k, { wavesLeft: 2 });
-                const occupant = getDieAt(available[i].q, available[i].r);
-                if (occupant) occupant.trapped = 2;
+            const count = variant === 'snow' ? 3 : 2;
+            for (let i = 0; i < Math.min(count, available.length); i++) {
+                const h = available[i];
+                game.vineTraps.set(hKey(h.q, h.r), { wavesLeft: 2, bornAt: now() + i * 300, kind: variant });
+                matchTimeout(() => {
+                    const p = hexScreen(h.q, h.r);
+                    spawnParticles(p.x, p.y, SNARE_KINDS[variant].color, 12, 2, 700, 3);
+                    SFX.block();
+                    const occupant = getDieAt(h.q, h.r);
+                    if (occupant) { triggerTileEffectOnDie(occupant); updateDiceHP(); }
+                }, i * 300 + 400);
             }
+            await delay(variant === 'snow' ? 1900 : 1400);
             break;
         }
         case 'bees': {
-            showBlitzAnnouncement('🐝 BEE ATTACK BLITZ!', '5 killer bees enter the arena for 3 waves!');
-            await delay(1500);
+            const variant = pickOne(['bee', 'mummy', 'robot']);
+            const text = {
+                bee: ['Bee swarm', '5 bees join for 3 waves: 5 damage and -1 move.'],
+                mummy: ['Mummy attack', '3 mummies rise for 3 waves: slow, 7 damage and a healing curse.'],
+                robot: ['Killer robots', '3 robots drop in for 3 waves and hunt the weakest die.'],
+            }[variant];
+            showBlitzAnnouncement(text[0], text[1]);
+            await delay(600);
+            const count = variant === 'bee' ? 5 : 3;
             const available = allHexes.filter(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
-            for (let i = 0; i < Math.min(5, available.length); i++) {
-                game.bees.push({ id: Math.random(), q: available[i].q, r: available[i].r, wavesLeft: 3 });
+            if (variant === 'bee') SFX.buzz(); else if (variant === 'robot') SFX.robot(); else SFX.crumble();
+            for (let i = 0; i < Math.min(count, available.length); i++) {
+                const unit = { id: Math.random(), q: available[i].q, r: available[i].r, wavesLeft: 3, kind: variant, bornAt: now() + i * 160 };
+                if (variant === 'bee') {
+                    const a = Math.random() * Math.PI * 2, rad = Math.max(canvas.width, canvas.height) * 0.6;
+                    unit.fromX = gridCenterX + Math.cos(a) * rad; unit.fromY = gridCenterY + Math.sin(a) * rad;
+                } else if (variant === 'robot') {
+                    const p = hexScreen(unit.q, unit.r);
+                    unit.fromX = p.x; unit.fromY = p.y - canvas.height; // drops from the sky
+                }
+                game.bees.push(unit);
+                if (variant === 'mummy') matchTimeout(() => { const p = hexScreen(unit.q, unit.r); spawnChunks(p.x, p.y + HEX_SIZE * 0.3, '#B89A74', 8, 2.5); }, i * 160);
+                if (variant === 'robot') matchTimeout(() => { const p = hexScreen(unit.q, unit.r); fxRing(p.x, p.y + HEX_SIZE * 0.3, '#7EC8F2', HEX_SIZE * 1.3, 450, 5); shakeBoard(200); }, i * 160 + 900);
             }
+            await delay(1900);
             break;
         }
         case 'magician': {
-            showBlitzAnnouncement('🧙 MAGICIAN BLITZ!', 'The Magician grants 2 random cards to everyone!');
-            await delay(1500);
+            showBlitzAnnouncement('The Magician', 'Both sides draw 2 random cards.');
+            await delay(500);
+            addBoardFx('magician', 2400);
+            SFX.magic();
+            await delay(1100);
             const maxP = getMaxHandSize('player');
             const maxC = getMaxHandSize('cpu');
             for (let i = 0; i < 2; i++) {
                 if (game.playerHand.length < maxP) game.playerHand.push(randomCard('player'));
                 if (game.cpuHand.length < maxC) game.cpuHand.push(randomCard('cpu'));
             }
+            SFX.cardGet();
             updateCardHand();
+            await delay(1300);
             break;
         }
     }
-    await delay(1000);
+    await delay(300);
 }
 
 // Instantaneous tile effect trigger helper
@@ -223,15 +436,21 @@ function triggerTileEffectOnDie(die) {
     const k = hKey(die.q, die.r);
 
     if (game.burningTiles && game.burningTiles.has(k)) {
-        applyIndirectDamage(die, 3, '🔥 Burning Tile', '#ef4444');
+        const kind = game.burningTiles.get(k).kind || 'fire';
+        const hz = HAZARD_KINDS[kind] || HAZARD_KINDS.fire;
+        applyIndirectDamage(die, hz.dmg, hz.label, hz.color);
+        if (hz.poison) die.antiHealTurns = Math.max(die.antiHealTurns, hz.poison);
         if (checkWin()) return;
     }
 
     if (game.vineTraps && game.vineTraps.has(k)) {
-        die.trapped = 2;
+        const kind = game.vineTraps.get(k).kind || 'vines';
+        const sn = SNARE_KINDS[kind] || SNARE_KINDS.vines;
         die.moveAllowance = 0;
-        addFloatingText('🌿 Trapped!', die.q, die.r, '#84cc16', 20);
-        SFX.block();
+        if (kind === 'medusa') { die.frozen = Math.max(die.frozen, 1); die.petrified = true; SFX.block(); }
+        else if (kind === 'snow') { die.moveDebuff = Math.max(die.moveDebuff, 1); SFX.freeze(); }
+        else { die.trapped = 2; SFX.block(); }
+        addFloatingText(sn.text, die.q, die.r, sn.color, 20);
         updateDiceHP();
     }
 
@@ -240,24 +459,22 @@ function triggerTileEffectOnDie(die) {
         const trap = game.bearTraps.get(k);
         if (trap && trap.team !== die.team) {
             game.bearTraps.delete(k);
-            applyIndirectDamage(die, 5, '🪤 Bear Trap', '#ef4444');
+            applyIndirectDamage(die, 5, 'Bear Trap', '#ef4444');
             die.trapped = 2;
             die.moveAllowance = 0;
-            addFloatingText('🪤 Bear Trapped!', die.q, die.r, '#ef4444', 20);
+            addFloatingText('Bear trapped!', die.q, die.r, '#ef4444', 20);
+            { const p = dieFxPos(die); spawnChunks(p.x, p.y + HEX_SIZE * 0.3, '#8E8AA3', 8, 2.5); }
             SFX.attack();
             updateDiceHP();
             if (checkWin()) return;
         }
     }
 
-    // Check bee collision on this tile
+    // Roaming creatures on this tile
     if (game.bees) {
-        for (const bee of game.bees) {
-            if (bee.q === die.q && bee.r === die.r && die.concealed === 0) {
-                applyIndirectDamage(die, 5, '🐝 Bee Attack', '#fbbf24');
-                die.moveDebuff = Math.max(die.moveDebuff, 1);
-                SFX.attack();
-                updateDiceHP();
+        for (const unit of game.bees) {
+            if (unit.q === die.q && unit.r === die.r && die.concealed === 0) {
+                applySwarmHit(unit, die);
                 if (checkWin()) return;
             }
         }
@@ -267,7 +484,7 @@ function triggerTileEffectOnDie(die) {
     if (game.zombies) {
         for (const zombie of game.zombies) {
             if (zombie.q === die.q && zombie.r === die.r && zombie.team !== die.team && die.concealed === 0) {
-                applyIndirectDamage(die, zombie.damage, '🧟 Zombie', '#10b981');
+                applyIndirectDamage(die, zombie.damage, 'Zombie', '#10b981');
                 SFX.attack();
                 updateDiceHP();
                 if (checkWin()) return;
@@ -281,31 +498,29 @@ async function processBeesMovement() {
     const activeDice = allDice().filter(d => d.hp > 0 && d.concealed === 0);
     if (activeDice.length === 0) return;
 
-    for (const bee of game.bees) {
-        let closestDie = activeDice[0];
-        let minDist = hexDist(bee.q, bee.r, closestDie.q, closestDie.r);
-        for (const d of activeDice) {
-            const dist = hexDist(bee.q, bee.r, d.q, d.r);
-            if (dist < minDist) { minDist = dist; closestDie = d; }
-        }
-
-        const steps = Math.min(2, Math.max(1, minDist));
+    for (const unit of game.bees) {
+        const kind = SWARM_KINDS[unit.kind || 'bee'];
+        // robots hunt the weakest die, everything else chases the nearest one
+        const target = unit.kind === 'robot'
+            ? activeDice.reduce((a, b) => (b.hp < a.hp ? b : a))
+            : activeDice.reduce((a, b) => (hexDist(unit.q, unit.r, b.q, b.r) < hexDist(unit.q, unit.r, a.q, a.r) ? b : a));
+        const dist = hexDist(unit.q, unit.r, target.q, target.r);
+        const steps = Math.min(kind.steps, Math.max(1, dist));
+        const startQ = unit.q, startR = unit.r;
         for (let s = 0; s < steps; s++) {
-            const neighbors = getNeighbors(bee.q, bee.r);
-            neighbors.sort((a, b) => hexDist(a.q, a.r, closestDie.q, closestDie.r) - hexDist(b.q, b.r, closestDie.q, closestDie.r));
-            if (neighbors.length > 0) {
-                bee.q = neighbors[0].q;
-                bee.r = neighbors[0].r;
-            }
-
-            if (bee.q === closestDie.q && bee.r === closestDie.r) {
-                applyIndirectDamage(closestDie, 5, '🐝 Bee Attack', '#fbbf24');
-                closestDie.moveDebuff = Math.max(closestDie.moveDebuff, 1);
-                SFX.attack();
-                updateDiceHP();
+            const neighbors = getNeighbors(unit.q, unit.r).filter(n => unit.kind === 'bee' || !isBlocked(n.q, n.r));
+            neighbors.sort((a, b) => hexDist(a.q, a.r, target.q, target.r) - hexDist(b.q, b.r, target.q, target.r));
+            if (neighbors.length > 0) { unit.q = neighbors[0].q; unit.r = neighbors[0].r; }
+            if (unit.q === target.q && unit.r === target.r) {
+                applySwarmHit(unit, target);
                 if (checkWin()) return;
                 break;
             }
+        }
+        if (unit.q !== startQ || unit.r !== startR) {
+            const endQ = unit.q, endR = unit.r;
+            unit.q = startQ; unit.r = startR;
+            stepCreature(unit, endQ, endR);
         }
     }
 }
@@ -318,8 +533,9 @@ async function processZombiesMovement() {
         const targetDice = aliveDice(enemyTeam).filter(d => d.concealed === 0);
         if (targetDice.length === 0) continue;
 
-        // Choose target die (persists or picks nearest)
-        let targetDie = targetDice[Math.floor(Math.random() * targetDice.length)];
+        // Chase the nearest enemy die
+        const targetDie = targetDice.reduce((best, d) =>
+            hexDist(zombie.q, zombie.r, d.q, d.r) < hexDist(zombie.q, zombie.r, best.q, best.r) ? d : best);
 
         // Move 3 tiles per turn towards enemy die
         const steps = 3;
@@ -328,10 +544,7 @@ async function processZombiesMovement() {
 
             const neighbors = getNeighbors(zombie.q, zombie.r).filter(n => !isBlocked(n.q, n.r));
             neighbors.sort((a, b) => hexDist(a.q, a.r, targetDie.q, targetDie.r) - hexDist(b.q, b.r, targetDie.q, targetDie.r));
-            if (neighbors.length > 0) {
-                zombie.q = neighbors[0].q;
-                zombie.r = neighbors[0].r;
-            }
+            if (neighbors.length > 0) stepCreature(zombie, neighbors[0].q, neighbors[0].r);
 
             if (zombie.q === targetDie.q && zombie.r === targetDie.r) {
                 applyIndirectDamage(targetDie, zombie.damage, '🧟 Zombie', '#10b981');

@@ -4,160 +4,197 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dice Wars: Hex Arena - Roguelike</title>
-    <meta name="description" content="Hexagonal strategy dice battle game with cards & classes - Player vs Computer">
+    <title>Dice Wars: Hex Arena</title>
+    <meta name="description" content="Hexagonal strategy dice battle with classes, cards and roguelike upgrades. Player vs Computer.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=2.9.3">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css?v=3.3.0">
 </head>
 
 <body>
 
-    <!-- Floating Header Buttons -->
-    <button class="floating-menu-btn" onclick="openGameMenuModal()" title="In-Game Menu">⚙️</button>
-    <button class="floating-help-btn" onclick="openHelpModal()" title="How to Play & Info">❓</button>
-
     <!-- START SCREEN -->
     <div id="start-screen">
-        <h1>⚔ DICE WARS ⚔</h1>
-        <p class="subtitle">Hexagonal Arena - Roguelike Edition</p>
+        <button class="round-btn start-help" onclick="openHelpModal()" title="How to play" aria-label="How to play">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.7M12 17.2v.1"/></svg>
+        </button>
 
-        <!-- Animated Carousel Selector Section -->
-        <div class="carousel-selector-container">
-            <div class="carousel-section-title">Choose 3 Unique Classes For Your Dice</div>
+        <header class="title-block">
+            <div class="title-dice" aria-hidden="true">
+                <span class="clay-die teal"><i></i><i></i><i></i></span>
+                <span class="clay-die berry"><i></i><i></i></span>
+            </div>
+            <h1 class="game-title">Dice Wars</h1>
+            <p class="subtitle">Hex arena roguelike. Roll, move, outlast.</p>
+        </header>
+
+        <section class="squad-picker" aria-labelledby="squad-title">
+            <div class="squad-head">
+                <h2 id="squad-title">Pick your squad</h2>
+                <p>Three dice, three different classes. Each class brings its own skills to the arena.</p>
+            </div>
             <div class="dice-carousel-grid">
-                <!-- Die 1 Card -->
                 <div class="die-carousel-card">
-                    <div class="die-card-header">🟢 Die 1</div>
-                    <div class="class-carousel-controls">
-                        <button class="carousel-arrow-btn" onclick="cycleClass(0, -1)">◀</button>
-                        <span style="font-size:0.75rem;font-weight:800;color:var(--text-dim);">SELECT ROLE</span>
-                        <button class="carousel-arrow-btn" onclick="cycleClass(0, 1)">▶</button>
+                    <div class="die-card-header">Die 1</div>
+                    <div class="class-carousel">
+                        <button class="carousel-arrow-btn" onclick="cycleClass(0, -1)" aria-label="Previous class for die 1"><svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+                        <div class="class-display-box" id="class-box-0"></div>
+                        <button class="carousel-arrow-btn" onclick="cycleClass(0, 1)" aria-label="Next class for die 1"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
                     </div>
-                    <div class="class-display-box" id="class-box-0"></div>
                 </div>
-
-                <!-- Die 2 Card -->
                 <div class="die-carousel-card">
-                    <div class="die-card-header">🟢 Die 2</div>
-                    <div class="class-carousel-controls">
-                        <button class="carousel-arrow-btn" onclick="cycleClass(1, -1)">◀</button>
-                        <span style="font-size:0.75rem;font-weight:800;color:var(--text-dim);">SELECT ROLE</span>
-                        <button class="carousel-arrow-btn" onclick="cycleClass(1, 1)">▶</button>
+                    <div class="die-card-header">Die 2</div>
+                    <div class="class-carousel">
+                        <button class="carousel-arrow-btn" onclick="cycleClass(1, -1)" aria-label="Previous class for die 2"><svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+                        <div class="class-display-box" id="class-box-1"></div>
+                        <button class="carousel-arrow-btn" onclick="cycleClass(1, 1)" aria-label="Next class for die 2"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
                     </div>
-                    <div class="class-display-box" id="class-box-1"></div>
                 </div>
-
-                <!-- Die 3 Card -->
                 <div class="die-carousel-card">
-                    <div class="die-card-header">🟢 Die 3</div>
-                    <div class="class-carousel-controls">
-                        <button class="carousel-arrow-btn" onclick="cycleClass(2, -1)">◀</button>
-                        <span style="font-size:0.75rem;font-weight:800;color:var(--text-dim);">SELECT ROLE</span>
-                        <button class="carousel-arrow-btn" onclick="cycleClass(2, 1)">▶</button>
+                    <div class="die-card-header">Die 3</div>
+                    <div class="class-carousel">
+                        <button class="carousel-arrow-btn" onclick="cycleClass(2, -1)" aria-label="Previous class for die 3"><svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+                        <div class="class-display-box" id="class-box-2"></div>
+                        <button class="carousel-arrow-btn" onclick="cycleClass(2, 1)" aria-label="Next class for die 3"><svg class="ico" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
                     </div>
-                    <div class="class-display-box" id="class-box-2"></div>
                 </div>
             </div>
-        </div>
+        </section>
 
         <div class="start-actions-wrapper">
-            <button class="btn-start" onclick="openGameSettingsModal()">START BATTLE</button>
-            <button class="btn-guide" onclick="openDiceGuideModal()">DICE GUIDE</button>
+            <button class="clay-btn teal big" onclick="openGameSettingsModal()">Start battle</button>
+            <button class="clay-btn plain" onclick="openDiceGuideModal()">Class guide</button>
         </div>
     </div>
 
     <!-- GAME SCREEN -->
     <div id="game-screen">
-        <!-- Floating Left Stats Panel Widget -->
-        <div class="stats-panel-widget" id="stats-panel-widget">
-            <button class="stats-toggle-btn" onclick="toggleStatsPanel()" id="stats-toggle-btn" title="Toggle Stats">◀</button>
-            <div class="stats-header">
-                <span class="stats-title">📊 BATTLE STATS</span>
+        <header class="topbar">
+            <button class="round-btn" onclick="openGameMenuModal()" title="Menu" aria-label="Menu">
+                <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9M15 5a2 2 0 1 0 0 4a2 2 0 1 0 0-4M9 15a2 2 0 1 0 0 4a2 2 0 1 0 0-4"/></svg>
+            </button>
+            <div class="brand">Dice Wars</div>
+            <div class="hud-group">
+                <span class="hud-chip wave" id="wave-badge">Wave 1</span>
+                <div class="hud-chip timer" id="timer-badge" title="Time left this turn">
+                    <svg class="ico" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7.5 3c0 5.5 9 5.5 9 9s-9 3.5-9 9M16.5 3c0 5.5-9 5.5-9 9s9 3.5 9 9"/></svg>
+                    <span>30</span><small>s</small>
+                </div>
+                <div class="hud-chip daytime" id="daytime-badge" title="Time of day in the arena"><span>Morning</span></div>
+                <div class="hud-chip clock" id="stopwatch-badge" title="Match time">
+                    <svg class="ico" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 7v5l3 2"/></svg>
+                    <span class="sw-val">00:00</span>
+                </div>
             </div>
-            <div class="stats-tabs-row">
-                <button class="stats-tab-btn active" id="tab-stat-dealt" onclick="switchStatsTab('dealt')">⚔️ Dealt</button>
-                <button class="stats-tab-btn" id="tab-stat-taken" onclick="switchStatsTab('taken')">🛡️ Taken</button>
-                <button class="stats-tab-btn" id="tab-stat-heal" onclick="switchStatsTab('heal')">💚 Heal</button>
-                <button class="stats-tab-btn" id="tab-stat-log" onclick="switchStatsTab('log')">📜 Log</button>
+            <div class="topbar-actions">
+                <button class="pill-btn" id="auto-test-btn" onclick="toggleFastAutoMode()" title="Let a bot play your turns (testing)">
+                    <svg class="ico" viewBox="0 0 24 24"><path d="M4 6l7 6-7 6zM12 6l7 6-7 6z"/></svg><span>Auto play</span>
+                </button>
+                <button class="round-btn" id="bgm-toggle" onclick="toggleBGM()" title="Music" aria-label="Toggle music">
+                    <svg class="ico" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13M9 18a3 3 0 1 1-3-3 3 3 0 0 1 3 3zM20 16a3 3 0 1 1-3-3 3 3 0 0 1 3 3z"/></svg>
+                </button>
+                <button class="round-btn" onclick="openHelpModal()" title="How to play" aria-label="How to play">
+                    <svg class="ico" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.7M12 17.2v.1"/></svg>
+                </button>
             </div>
-            <div class="stats-content-area" id="stats-content-area">
-                <!-- Injected via updateStatsDisplay() in ui.js -->
+        </header>
+
+        <aside class="side side-left">
+            <section class="panel team-panel cpu" id="cpu-bar">
+                <div class="panel-head">
+                    <h3><span class="team-dot cpu"></span>Computer</h3>
+                    <span class="hand-count" id="cpu-hand-count" title="Cards in the computer's hand">0/3</span>
+                </div>
+                <div class="dice-hp-row" id="cpu-dice-hp"></div>
+            </section>
+
+            <section class="panel stats-panel-widget" id="stats-panel-widget">
+                <button class="stats-toggle-btn" onclick="toggleStatsPanel()" id="stats-toggle-btn" title="Show or hide the battle report" aria-label="Toggle battle report">
+                    <svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
+                </button>
+                <div class="panel-head">
+                    <h3>Battle report</h3>
+                </div>
+                <div class="stats-tabs-row" role="tablist">
+                    <button class="stats-tab-btn active" id="tab-stat-dealt" onclick="switchStatsTab('dealt')">Dealt</button>
+                    <button class="stats-tab-btn" id="tab-stat-taken" onclick="switchStatsTab('taken')">Taken</button>
+                    <button class="stats-tab-btn" id="tab-stat-heal" onclick="switchStatsTab('heal')">Healed</button>
+                    <button class="stats-tab-btn" id="tab-stat-log" onclick="switchStatsTab('log')">Log</button>
+                </div>
+                <div class="stats-content-area" id="stats-content-area"></div>
+            </section>
+        </aside>
+
+        <main class="board">
+            <div id="game-message" role="status" aria-live="polite">Waiting to start…</div>
+            <div id="canvas-wrapper">
+                <canvas id="canvas"></canvas>
             </div>
-        </div>
+        </main>
 
-        <!-- CPU info -->
-        <div class="info-bar" id="cpu-bar">
-            <span class="team-label cpu">🔴 COMPUTER</span>
-            <div class="dice-hp-row" id="cpu-dice-hp"></div>
-            <span class="cpu-hand-count" id="cpu-hand-count">🃏 0</span>
-        </div>
+        <aside class="side side-right">
+            <section class="panel team-panel player" id="player-bar">
+                <div class="panel-head">
+                    <h3><span class="team-dot player"></span>Your dice</h3>
+                </div>
+                <div class="dice-hp-row" id="player-dice-hp"></div>
+            </section>
 
-        <!-- Canvas -->
-        <div id="canvas-wrapper">
-            <canvas id="canvas"></canvas>
-        </div>
+            <section class="panel card-hand-panel" id="card-panel">
+                <div class="panel-head">
+                    <h3>Hand</h3>
+                    <div class="card-actions">
+                        <button class="pill-btn danger btn-cancel-card" id="btn-cancel-card" onclick="cancelCard()">
+                            <svg class="ico" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg><span>Cancel</span>
+                        </button>
+                        <button class="pill-btn btn-discard-card" id="btn-discard-card" onclick="destroyActiveCard()" title="Throw away the selected card">
+                            <svg class="ico" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Discard</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-slots" id="card-slots"><span class="empty-hand">No cards yet. Step on a glowing crystal to draw one.</span></div>
+            </section>
+        </aside>
 
-        <!-- Row 1: Match Info Bar (Wave, Timer, Duration, Music, Fast Auto Testing) -->
-        <div class="status-row-bar" id="match-status-bar">
-            <div class="status-group">
-                <span class="wave-badge" id="wave-badge">Wave 1</span>
-                <div class="timer-badge" id="timer-badge">⏳ <span>30</span>s</div>
-                <div class="stopwatch-badge" id="stopwatch-badge">⏱️ 00:00</div>
+        <footer class="tray" id="controls-bar">
+            <div class="tray-roll">
+                <div class="roll-dice-display" id="roll-display"></div>
+                <div class="moves-display" id="moves-display"><b>0</b> moves</div>
             </div>
-            <div class="status-group">
-                <button class="btn-auto-test" id="auto-test-btn" onclick="toggleFastAutoMode()"
-                    title="Fast Bot vs Bot testing mode">⚡ Fast Auto: OFF</button>
-                <button class="icon-btn" id="bgm-toggle" onclick="toggleBGM()">🔊 Music On</button>
+            <div class="tray-skills">
+                <button class="clay-btn violet btn-action btn-zap" id="btn-zap" onclick="triggerPlayerMageZap()" title="Mage: hit the nearest enemy for damage equal to its distance">Zap</button>
+                <button class="clay-btn sky btn-action btn-archer" id="btn-archer" style="display:none;" onclick="triggerPlayerArcherShot()" title="Archer: shoot any enemy from range">Long shot</button>
+                <button class="clay-btn amber btn-action btn-pivot" id="btn-pivot" style="display:none;" onclick="triggerPlayerPiercerPivot()" title="Piercer: 8 damage to every enemy around this die">Pivot</button>
+                <button class="clay-btn plain btn-action btn-cancel-pivot" id="btn-cancel-pivot" style="display:none;" onclick="cancelPivotPreview()">Cancel pivot</button>
+                <button class="clay-btn violet btn-action btn-mind-control" id="btn-mind-control" style="display:none;" onclick="triggerPlayerMindControl()" title="Telekinator: take control of one enemy die for 2 waves">Mind control</button>
             </div>
-        </div>
-
-        <!-- Row 2: Player & Dice info -->
-        <div class="info-bar" id="player-bar">
-            <span class="team-label player">🟢 PLAYER</span>
-            <div class="dice-hp-row" id="player-dice-hp"></div>
-        </div>
-
-        <!-- Controls -->
-        <div class="controls-bar" id="controls-bar">
-            <div class="roll-dice-display" id="roll-display"></div>
-            <div class="moves-display" id="moves-display">Moves: 0</div>
-            <button class="btn-action btn-deselect" id="btn-deselect" disabled onclick="deselectDie()">↩ Deselect</button>
-            <button class="btn-action btn-end" id="btn-end" disabled onclick="endTurn()">⏭ End Turn</button>
-            <button class="btn-action btn-zap" id="btn-zap" onclick="triggerPlayerMageZap()" title="Trigger Mage Zap skill based on distance to nearest enemy">⚡ ZAP (0)</button>
-            <button class="btn-action btn-archer" id="btn-archer" style="display:none;" onclick="triggerPlayerArcherShot()" title="Archer Ranged Shot (Miss chance based on distance)">🏹 Long Shot</button>
-            <button class="btn-action btn-pivot" id="btn-pivot" style="display:none;" onclick="triggerPlayerPiercerPivot()" title="Piercer Pivot: Deal 8 area damage around die">🎯 Pivot (8 DMG)</button>
-            <button class="btn-action btn-cancel-pivot" id="btn-cancel-pivot" style="display:none;background:rgba(239,68,68,0.2);border:1px solid #ef4444;color:#fca5a5;" onclick="cancelPivotPreview()" title="Cancel Pivot Strike">❌ Cancel Pivot</button>
-            <button class="btn-action btn-mind-control" id="btn-mind-control" style="display:none;" onclick="triggerPlayerMindControl()" title="Telekinator: Mind Control 1 enemy die every 5 waves">🔮 Mind Control</button>
-        </div>
-
-        <!-- Card Hand -->
-        <div class="card-hand-panel" id="card-panel">
-            <div class="hand-label">🃏 Cards</div>
-            <button class="btn-cancel-card" id="btn-cancel-card" onclick="cancelCard()">❌ Cancel</button>
-            <button class="btn-discard-card" id="btn-discard-card" onclick="destroyActiveCard()" title="Destroy / discard this active card">🗑️ Discard</button>
-            <div class="card-slots" id="card-slots"><span class="empty-hand">No cards yet</span></div>
-        </div>
-
-        <!-- Message -->
-        <div id="game-message">Waiting to start...</div>
+            <div class="tray-turn">
+                <button class="clay-btn plain btn-action btn-deselect" id="btn-deselect" disabled onclick="deselectDie()">
+                    <svg class="ico" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg>Deselect
+                </button>
+                <button class="clay-btn berry btn-action btn-end" id="btn-end" disabled onclick="endTurn()">
+                    End turn<svg class="ico" viewBox="0 0 24 24"><path d="M5 5l8 7-8 7zM17 5v14"/></svg>
+                </button>
+            </div>
+        </footer>
     </div>
 
     <!-- OVERLAY -->
     <div id="overlay" class="hidden"></div>
 
-    <!-- Modular Script Architecture -->
-    <script src="js/config.js?v=2.9.4"></script>
-    <script src="js/hex.js?v=2.9.4"></script>
-    <script src="js/audio.js?v=2.9.4"></script>
-    <script src="js/state.js?v=2.9.4"></script>
-    <script src="js/render.js?v=2.9.4"></script>
-    <script src="js/ui.js?v=2.9.4"></script>
-    <script src="js/cards.js?v=2.9.4"></script>
-    <script src="js/events.js?v=2.9.4"></script>
-    <script src="js/ai.js?v=2.9.4"></script>
-    <script src="js/game.js?v=2.9.4"></script>
-    <script src="js/main.js?v=2.9.4"></script>
+    <script src="js/config.js?v=3.3.0"></script>
+    <script src="js/icons.js?v=3.3.0"></script>
+    <script src="js/hex.js?v=3.3.0"></script>
+    <script src="js/audio.js?v=3.3.0"></script>
+    <script src="js/state.js?v=3.3.0"></script>
+    <script src="js/render.js?v=3.3.0"></script>
+    <script src="js/ui.js?v=3.3.0"></script>
+    <script src="js/cards.js?v=3.3.0"></script>
+    <script src="js/events.js?v=3.3.0"></script>
+    <script src="js/ai.js?v=3.3.0"></script>
+    <script src="js/game.js?v=3.3.0"></script>
+    <script src="js/main.js?v=3.3.0"></script>
 </body>
 
 </html>

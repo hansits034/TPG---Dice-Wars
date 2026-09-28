@@ -95,8 +95,11 @@ function resetGame() {
         lastAttackedId: null,
         turnTimeLeft: TURN_TIME_LIMIT,
         matchTimeSeconds: 0,
-        mindControlUsedWave: -99,
-        pivotUsedWave: -99,
+        // Skill cooldowns are tracked per team so one side's usage never locks the other side
+        mindControlUsedWave: { player: -99, cpu: -99 },
+        pivotUsedWave: { player: -99, cpu: -99 },
+        turnEnding: false,
+        aborted: false,
         pivotPreview: false,
         combatLog: [],
         stats: {
@@ -126,7 +129,7 @@ function getSkillLevel(die, skillId) {
 
 function getDieRageBonus(die) {
     const backLvl = getSkillLevel(die, 'backStronger');
-    if (backLvl > 0 || die.archetype === 'Rage') {
+    if (backLvl > 0) {
         const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
         const bonus = Math.floor((die.totalDamageTaken || 0) / reqDmg);
         return Math.min(10, bonus); // Max limit +10
@@ -159,6 +162,12 @@ function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444'
 
     if (dmgToApply > 0) {
         die.hp -= dmgToApply;
+        die.hitAt = performance.now();
+        if (typeof dieFxPos === 'function') {
+            const p = dieFxPos(die);
+            if (/Bleed/.test(sourceName)) spawnParticles(p.x, p.y + HEX_SIZE * 0.2, '#B5304F', 6, 1.5, 600, 2.5);
+            else fxImpact(die, color, dmgToApply >= 10);
+        }
         die.totalDamageTaken = (die.totalDamageTaken || 0) + dmgToApply;
         die.damagedThisWave = true;
         if (die.hp < 0) die.hp = 0;
@@ -169,21 +178,83 @@ function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444'
             if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
         }
 
-        const backLvl = getSkillLevel(die, 'backStronger');
-        if (backLvl > 0 || die.archetype === 'Rage') {
-            const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
-            const newBonus = Math.min(10, Math.floor(die.totalDamageTaken / reqDmg));
-            if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
-                const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
-                die.bonusDamageFromDamageTaken = newBonus;
-                addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
-            }
-        }
+        updateRageBonus(die);
 
         addFloatingText(`-${dmgToApply} ${sourceName}`, die.q, die.r, color, 18);
+        if (die.hp <= 0 && typeof handleDieDeath === 'function') handleDieDeath(die);
     }
     if (typeof updateDiceHP === 'function') updateDiceHP();
     return dmgToApply;
+}
+
+function getCooldownWave(key, team) {
+    const v = game[key];
+    if (v && typeof v === 'object') return v[team] ?? -99;
+    return -99;
+}
+
+function setCooldownWave(key, team) {
+    if (!game[key] || typeof game[key] !== 'object') game[key] = { player: -99, cpu: -99 };
+    game[key][team] = game.wave;
+}
+
+// Rage Back Stronger: recompute the permanent bonus after taking damage
+function updateRageBonus(die) {
+    const backLvl = getSkillLevel(die, 'backStronger');
+    if (backLvl <= 0) return;
+    const reqDmg = backLvl === 2 ? 9 : backLvl === 3 ? 7 : 10;
+    const newBonus = Math.min(10, Math.floor((die.totalDamageTaken || 0) / reqDmg));
+    if (newBonus > (die.bonusDamageFromDamageTaken || 0)) {
+        const diff = newBonus - (die.bonusDamageFromDamageTaken || 0);
+        die.bonusDamageFromDamageTaken = newBonus;
+        addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
+    }
+}
+
+// Defender Toughness: flat reduction of incoming contact damage (-3 / -5 / -7)
+function getToughnessReduction(die) {
+    const lvl = getSkillLevel(die, 'toughness');
+    return lvl === 1 ? 3 : lvl === 2 ? 5 : lvl === 3 ? 7 : 0;
+}
+
+// Credit damage (already applied to the target) to the attacking die and player stats
+function creditDamageDealt(attacker, amount) {
+    if (!attacker || amount <= 0) return;
+    attacker.totalDamageDealt = (attacker.totalDamageDealt || 0) + amount;
+    if (attacker.team === 'player' && game.stats) {
+        game.stats.damageDealt[attacker.id] = (game.stats.damageDealt[attacker.id] || 0) + amount;
+        game.stats.damageDealt.total += amount;
+        if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
+    }
+}
+
+// Direct / contact damage (not absorbed by Aegis). Tracks stats and triggers on-death effects.
+function dealDirectDamage(target, amount, attacker=null, label=null, color='#ef4444') {
+    if (!target || target.hp <= 0 || amount <= 0) return 0;
+    target.hp -= amount;
+    if (target.hp < 0) target.hp = 0;
+    target.hitAt = performance.now();
+    if (label && typeof fxImpact === 'function') fxImpact(target, '#FFD7C2', amount >= 10);
+    target.totalDamageTaken = (target.totalDamageTaken || 0) + amount;
+    target.damagedThisWave = true;
+    if (attacker) attacker.totalDamageDealt = (attacker.totalDamageDealt || 0) + amount;
+
+    if (game.stats) {
+        if (attacker && attacker.team === 'player') {
+            game.stats.damageDealt[attacker.id] = (game.stats.damageDealt[attacker.id] || 0) + amount;
+            game.stats.damageDealt.total += amount;
+        }
+        if (target.team === 'player') {
+            game.stats.damageTaken[target.id] = (game.stats.damageTaken[target.id] || 0) + amount;
+            game.stats.damageTaken.total += amount;
+        }
+        if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
+    }
+
+    updateRageBonus(target);
+    if (label) addFloatingText(`-${amount} ${label}`, target.q, target.r, color, 18);
+    if (target.hp <= 0 && typeof handleDieDeath === 'function') handleDieDeath(target);
+    return amount;
 }
 
 function addCombatLog(text, icon='⚔️', color='#e2e8f0') {
@@ -193,7 +264,7 @@ function addCombatLog(text, icon='⚔️', color='#e2e8f0') {
     }
     const entry = {
         wave: game.wave || 1,
-        text,
+        text: stripEmoji(text),
         icon,
         color,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
