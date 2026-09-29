@@ -1,14 +1,33 @@
 // ==========================================================
 // 17. EVENT HANDLERS & 18. INITIALIZATION
 // ==========================================================
-function onCanvasClick(e) {
+// Screen point -> hex under it
+function eventToHex(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
-    const gx = mx - gridCenterX, gy = my - gridCenterY;
-    const hex = pixelToHex(gx, gy);
+    const mx = (clientX - rect.left) * (canvas.width / rect.width);
+    const my = (clientY - rect.top) * (canvas.height / rect.height);
+    return pixelToHex(mx - gridCenterX, my - gridCenterY);
+}
 
-    if (!isValidHex(hex.q, hex.r)) return;
+// Touch screens have no hover: tapping an enemy (or any die outside your move) shows its details briefly
+let lastPointerType = 'mouse';
+let tipTimer = null;
+function showTapInfo(die, clientX, clientY, ms = 2800) {
+    showDieTooltip(die, clientX, clientY);
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(hideDieTooltip, ms);
+}
+
+function onCanvasClick(e) {
+    const hex = eventToHex(e.clientX, e.clientY);
+
+    if (!isValidHex(hex.q, hex.r)) { if (lastPointerType !== 'mouse') hideDieTooltip(); return; }
+
+    if (lastPointerType !== 'mouse') {
+        const tapped = getDieAt(hex.q, hex.r);
+        if (tapped && tapped.team !== 'player' && !tapped.concealed) showTapInfo(tapped, e.clientX, e.clientY);
+        else hideDieTooltip();
+    }
 
     if (game.phase === 'PLAYER_CARD_TARGET') {
         handleCardTarget(hex.q, hex.r);
@@ -74,11 +93,8 @@ function onCanvasClick(e) {
 }
 
 function onCanvasMouseMove(e) {
-    const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
-    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
-    const gx = mx - gridCenterX, gy = my - gridCenterY;
-    const hex = pixelToHex(gx, gy);
+    if (e.pointerType && e.pointerType !== 'mouse') return;
+    const hex = eventToHex(e.clientX, e.clientY);
 
     if (isValidHex(hex.q, hex.r)) {
         hoveredHex = hex;
@@ -108,10 +124,19 @@ function onCanvasMouseMove(e) {
 function onCanvasMouseLeave() { hoveredHex = null; canvas.style.cursor = 'default'; hideDieTooltip(); }
 function onResize() { setupCanvas(); }
 
-function onCanvasTouch(e) {
-    e.preventDefault();
-    const touch = e.touches[0];
-    onCanvasClick({ clientX: touch.clientX, clientY: touch.clientY });
+// Re-fit the board whenever its box changes size (rotation, panels opening, fonts loading)
+let lastBoardSize = '';
+function watchBoardSize() {
+    const wrap = document.getElementById('canvas-wrapper');
+    if (!wrap || typeof ResizeObserver === 'undefined') return;
+    let pending = null;
+    new ResizeObserver(() => {
+        const size = `${wrap.clientWidth}x${wrap.clientHeight}`;
+        if (size === lastBoardSize || !wrap.clientWidth) return;
+        lastBoardSize = size;
+        clearTimeout(pending);
+        pending = setTimeout(setupCanvas, 60);
+    }).observe(wrap);
 }
 
 function onKeyDown(e) {
@@ -123,15 +148,17 @@ function init() {
     ctx = canvas.getContext('2d');
 
     canvas.addEventListener('click', onCanvasClick);
-    canvas.addEventListener('mousemove', onCanvasMouseMove);
+    canvas.addEventListener('pointerdown', e => { lastPointerType = e.pointerType || 'mouse'; });
+    canvas.addEventListener('pointermove', onCanvasMouseMove);
     canvas.addEventListener('mouseleave', onCanvasMouseLeave);
-    canvas.addEventListener('touchstart', onCanvasTouch, { passive: false });
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
     window.addEventListener('keydown', onKeyDown);
 
     setupClassSelectionUI();
     resetGame();
     setupCanvas();
+    watchBoardSize();
     render();
 }
 

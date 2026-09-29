@@ -26,6 +26,7 @@ function onCardClick(idx) {
 
     if (card.target === 'none') {
         applyCard(card, 'player', idx);
+        setMessage(`${card.name}: ${card.desc}`);
     } else {
         game.activeCard = { ...card, _handIdx: idx };
         game.cardTargets = [];
@@ -50,6 +51,8 @@ function onCardClick(idx) {
             setMessage(`${card.icon} ${card.name}: Click an enemy die (or click cancel to abort).`);
         }
         setButtons(true, true);
+        const msg = document.getElementById('game-message');
+        if (msg) msg.textContent = `${card.name}: ${card.desc}. ${msg.textContent}`;
     }
     updateCardHand();
 }

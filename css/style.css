@@ -60,9 +60,11 @@ body {
     overflow-x: hidden;
     user-select: none;
     -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
 }
 
-button { font-family: inherit; color: inherit; }
+button { font-family: inherit; color: inherit; touch-action: manipulation; }
 :focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
 
 .ico {
@@ -296,7 +298,7 @@ canvas { max-width: 100%; }
     transition: box-shadow 0.3s;
 }
 #canvas-wrapper.aura-psychic { box-shadow: inset 0 0 0 4px rgba(132, 104, 196, 0.55); }
-canvas { display: block; cursor: pointer; touch-action: none; }
+canvas { display: block; cursor: pointer; touch-action: manipulation; }
 
 #game-message {
     position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 5;
@@ -451,6 +453,7 @@ canvas { display: block; cursor: pointer; touch-action: none; }
 .tray-roll { display: flex; align-items: center; gap: 12px; }
 .tray-skills { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1; justify-content: center; }
 .tray-turn { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.tray-skills.empty { display: none; }
 
 .roll-dice-display { display: flex; align-items: center; gap: 6px; min-height: 44px; font-weight: 900; }
 .roll-die-box {
@@ -794,49 +797,250 @@ body::before {
     .stats-panel-widget, .card-hand-panel { min-height: 160px; }
 }
 
-@media (max-width: 1180px) {
-    #game-screen.active {
-        grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: none;
-        grid-template-areas: "top" "left" "board" "tray" "right";
-        height: auto; min-height: 0;
-        padding: 10px 12px 18px;
-    }
-    .side-left { display: grid; grid-template-columns: 1fr; }
-    .board { height: min(100vw, 72vh); min-height: 360px; padding-top: 0; }
-    #game-message { position: static; transform: none; margin: 0 auto 8px; }
-    .dice-hp-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); }
+/* =========================================================
+   Responsive layouts
+   - desktop  (> 1180px): three columns (existing)
+   - tablet   (821-1180px): board + one side column
+   - phone    (<= 820px): single column game view, sticky action tray
+   - short landscape (height <= 520px): board left, controls right
+   ========================================================= */
+
+/* shared collapsible battle report (tablet, phone, landscape) */
+@media (max-width: 1180px), (max-height: 520px) and (orientation: landscape) {
+    .stats-panel-widget { flex: 0 0 auto; min-height: 0; }
     .stats-panel-widget:not(.open) .stats-tabs-row,
     .stats-panel-widget:not(.open) .stats-content-area { display: none; }
     .stats-panel-widget:not(.open) .panel-head { margin-bottom: 0; }
-    .stats-panel-widget.open .stats-content-area { max-height: 320px; }
+    .stats-panel-widget.open .stats-content-area { max-height: 300px; }
+    .stats-panel-widget .panel-head { padding-right: 44px; cursor: pointer; }
     .stats-toggle-btn {
-        display: flex; position: absolute; top: 12px; right: 12px;
-        width: 34px; height: 34px; border-radius: 12px; border: none; cursor: pointer;
+        display: flex; position: absolute; top: 10px; right: 12px;
+        width: 36px; height: 36px; border-radius: 12px; border: none; cursor: pointer;
         align-items: center; justify-content: center; background: #fff;
         box-shadow: 0 3px 0 var(--clay-lip);
-        transform: rotate(-90deg);
+        transform: rotate(-90deg); transition: transform 0.2s;
     }
     .stats-panel-widget.open .stats-toggle-btn { transform: rotate(90deg); }
-    .card-slots { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-    .tray-turn { margin-left: 0; }
+    #game-message { font-size: 0.88rem; }
 }
-@media (max-width: 720px) {
+
+/* ---------- tablet / small laptop ---------- */
+@media (min-width: 821px) and (max-width: 1180px) {
+    #game-screen.active {
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 330px);
+        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        grid-template-areas:
+            "top top"
+            "board left"
+            "board right"
+            "tray tray";
+        height: 100vh; height: 100dvh; min-height: 560px;
+        gap: 12px; padding: 12px 14px 14px;
+    }
+    .side { gap: 12px; }
+    .side-right { min-height: 0; overflow-y: auto; padding: 2px 2px 8px; margin: -2px; }
+    .team-panel { max-height: none; flex: 0 0 auto; }
+    .die-hp-card .sk-mini { display: none; }
+    .side-right .card-hand-panel { flex: 1 0 auto; min-height: 170px; }
+    .card-slot { flex-direction: row; align-items: center; min-height: 0; padding: 8px 10px; gap: 8px; }
+    .card-slot .card-art { width: 32px; height: 32px; border-radius: 10px; }
+    .card-slot .card-art .ico { width: 19px; height: 19px; }
+    .card-slot .card-desc { display: none; }
+    .board { padding-top: 44px; }
+}
+
+/* short tablets / small laptops: one-line roster cards so the hand stays in view */
+@media (min-width: 821px) and (max-width: 1180px) and (max-height: 860px) {
+    .die-hp-card .die-sub { display: none; }
+    .die-hp-card { padding: 6px 10px; }
+    .dice-hp-row { gap: 5px; }
+    .team-panel .panel-head { margin-bottom: 6px; }
+}
+
+/* ---------- phones and tablets in portrait ---------- */
+@media (max-width: 820px) {
+    #game-screen.active {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+        grid-template-areas:
+            "top"
+            "cpu"
+            "board"
+            "player"
+            "tray"
+            "hand"
+            "report";
+        height: auto; min-height: 100dvh;
+        gap: 10px;
+        padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    }
+    /* let the panels inside the side columns become grid items so they can be reordered */
+    .side { display: contents; }
+    #cpu-bar { grid-area: cpu; }
+    #player-bar { grid-area: player; }
+    #card-panel { grid-area: hand; }
+    #stats-panel-widget { grid-area: report; }
+
+    .topbar { padding: 6px 8px; gap: 8px; border-radius: 18px; }
     .brand { display: none; }
-    .hud-chip { padding: 5px 10px; font-size: 0.82rem; }
+    .hud-group { gap: 5px; flex-wrap: nowrap; min-width: 0; }
+    .hud-chip { padding: 5px 9px; font-size: 0.8rem; }
     .topbar-actions { gap: 6px; }
     .round-btn { width: 40px; height: 40px; }
-    .tray-roll { flex-wrap: wrap; justify-content: center; }
-    .topbar { flex-wrap: wrap; }
     #auto-test-btn span { display: none; }
-    .dice-carousel-grid { grid-template-columns: 1fr; }
-    .squad-picker { padding: 16px; }
+    #auto-test-btn { padding: 8px 10px; }
+
+    .panel { padding: 10px 12px; border-radius: 20px; }
+    .panel-head { margin-bottom: 8px; }
+    .panel-head h3 { font-size: 1rem; }
+
+    /* compact horizontal team strips; tap a die for details */
+    .team-panel { max-height: none; }
+    .dice-hp-row { flex-direction: row; overflow-x: auto; gap: 8px; scroll-snap-type: x proximity; padding-bottom: 4px; }
+    .die-hp-card { flex: 1 0 150px; scroll-snap-align: start; padding: 6px 8px; column-gap: 8px; cursor: pointer; }
+    .die-hp-card .class-badge { width: 28px; height: 28px; }
+    .die-name small { display: none; }
+    .die-name { font-size: 0.8rem; }
+    .hp-num { font-size: 0.66rem; }
+    .die-hp-card .sk-mini { display: none; }
+    .die-hp-card .hp-num { display: none; }
+    .die-dmg-chip { font-size: 0.78rem; padding: 2px 6px; }
+    .die-dmg-chip small { display: none; }
+
+    .board { height: min(calc(100vw - 20px), 64vh); height: min(calc(100vw - 20px), 64dvh); min-height: 300px; padding-top: 0; }
+    #game-message { position: absolute; top: 4px; transform: translateX(-50%); max-width: 94%; padding: 7px 14px; font-size: 0.82rem; }
+
+    /* hand: one swipeable row of compact cards */
+    .card-hand-panel { min-height: 0; }
+    .card-slots { display: flex; grid-template-columns: none; overflow-x: auto; overflow-y: visible; gap: 8px; padding: 2px 2px 8px; scroll-snap-type: x proximity; }
+    .card-slot { flex: 0 0 auto; flex-direction: row; align-items: center; min-height: 0; padding: 8px 12px 8px 8px; gap: 8px; scroll-snap-align: start; }
+    .card-slot .card-art { width: 34px; height: 34px; border-radius: 11px; }
+    .card-slot .card-art .ico { width: 20px; height: 20px; }
+    .card-slot .card-desc { display: none; }
+    .card-slot .card-name { font-size: 0.9rem; white-space: nowrap; }
+    .card-rarity { top: 6px; right: 6px; width: 7px; height: 7px; }
+    .empty-hand { padding: 4px; font-size: 0.8rem; }
+
+    /* action tray stays reachable while scrolling */
+    .tray {
+        position: sticky; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 20;
+        padding: 10px; gap: 8px; border-radius: 20px; justify-content: space-between;
+    }
+    .tray-roll { gap: 8px; }
+    .roll-die-box { width: 32px; height: 32px; font-size: 1.05rem; border-radius: 10px; }
+    .roll-total { font-size: 1.25rem; }
+    .moves-display { padding: 5px 10px; }
+    .moves-display b { font-size: 1.15rem; }
+    /* row 1: roll + moves, row 2: skills (icon + count) then deselect / end turn */
+    .tray-roll { flex: 1 1 100%; justify-content: space-between; }
+    .tray-skills { order: 2; flex: 1 1 auto; min-width: 0; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; gap: 6px; }
+    .tray-skills .clay-btn { padding: 9px 11px; }
+    .tray-skills .clay-btn > span:not(.btn-count) { display: none; }
+    .tray-turn { order: 3; margin-left: auto; gap: 8px; }
+    .clay-btn { padding: 9px 14px; min-height: 44px; font-size: 0.95rem; }
+
+    #die-tooltip { width: min(270px, calc(100vw - 40px)); }
+    .blitz-announcement { top: 70px; max-width: calc(100vw - 24px); padding: 10px 16px 10px 10px; }
+    .blitz-title { font-size: 1.2rem; }
+    .blitz-desc { font-size: 0.78rem; }
+    .card-gained-popup { max-width: calc(100vw - 24px); }
+}
+
+/* ---------- small phones ---------- */
+@media (max-width: 480px) {
+    .hud-chip.daytime span, .hud-chip.clock { display: none; }
+    .hud-chip.daytime { padding: 5px 8px; }
+    .tray-turn .clay-btn.btn-deselect { padding: 9px 11px; }
+    .tray-turn .clay-btn.btn-deselect { font-size: 0; gap: 0; }
+    .tray-turn .clay-btn.btn-deselect .ico { font-size: 1rem; width: 20px; height: 20px; }
+    .roll-plus, .roll-eq { display: none; }
+    .roll-dice-display { gap: 4px; }
+}
+
+/* ---------- short landscape (phones on their side) ---------- */
+@media (max-height: 520px) and (orientation: landscape) {
+    #game-screen.active {
+        grid-template-columns: minmax(0, 1fr) minmax(260px, 38vw);
+        grid-template-rows: auto auto auto auto auto;
+        grid-template-areas:
+            "board top"
+            "board tray"
+            "board player"
+            "board hand"
+            "board cpu"
+            "board report";
+        height: auto; min-height: 100dvh; align-content: start;
+        gap: 8px;
+        padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
+    }
+    .side { display: contents; }
+    #cpu-bar { grid-area: cpu; }
+    #player-bar { grid-area: player; }
+    #card-panel { grid-area: hand; }
+    #stats-panel-widget { grid-area: report; }
+    .board {
+        position: sticky; top: 0; align-self: start;
+        height: calc(100dvh - 16px); min-height: 0; padding-top: 0;
+    }
+    #game-message { position: absolute; top: 4px; transform: translateX(-50%); font-size: 0.78rem; padding: 6px 12px; }
+    .topbar { flex-wrap: wrap; padding: 6px; gap: 6px; }
+    .brand, #auto-test-btn span, .hud-chip.clock { display: none; }
+    .hud-chip { padding: 4px 8px; font-size: 0.78rem; }
+    .round-btn { width: 38px; height: 38px; }
+    .panel { padding: 10px; border-radius: 18px; }
+    .team-panel { max-height: none; }
+    .die-hp-card .sk-mini { display: none; }
+    .card-hand-panel { min-height: 0; }
+    .card-slot { flex-direction: row; align-items: center; min-height: 0; padding: 8px; gap: 8px; }
+    .card-slot .card-desc { display: none; }
+    .card-slot .card-art { width: 30px; height: 30px; }
+    .tray { flex-direction: column; align-items: stretch; padding: 10px; gap: 8px; }
+    .tray-roll, .tray-skills, .tray-turn { justify-content: center; margin: 0; }
+    .clay-btn { min-height: 42px; padding: 8px 12px; font-size: 0.92rem; }
+}
+
+/* ---------- start screen on small screens ---------- */
+@media (max-width: 720px) {
+    #start-screen { justify-content: flex-start; gap: 18px; padding: max(24px, env(safe-area-inset-top)) 14px 28px; }
+    .title-dice .clay-die { width: 44px; height: 44px; border-radius: 12px; }
+    .clay-die i { width: 9px; height: 9px; }
+    .clay-die.teal i:nth-child(1) { top: 7px; left: 7px; }
+    .clay-die.teal i:nth-child(2) { top: 17px; left: 17px; }
+    .clay-die.teal i:nth-child(3) { bottom: 7px; right: 7px; }
+    .clay-die.berry i:nth-child(1) { top: 8px; right: 8px; }
+    .clay-die.berry i:nth-child(2) { bottom: 8px; left: 8px; }
+    .subtitle { margin-top: 12px; font-size: 0.95rem; }
+    .squad-picker { padding: 14px; border-radius: 24px; }
+    .squad-head h2 { font-size: 1.3rem; }
+    .squad-head p { font-size: 0.82rem; }
+    .dice-carousel-grid { grid-template-columns: 1fr; gap: 10px; }
+    .die-carousel-card { flex-direction: row; align-items: center; padding: 10px; gap: 8px; }
+    .die-card-header { writing-mode: vertical-rl; transform: rotate(180deg); margin: 0; padding: 8px 3px; }
+    .class-carousel { grid-template-columns: 40px 1fr 40px; align-items: center; }
+    .class-carousel .carousel-arrow-btn { margin-top: 0; width: 40px; height: 40px; }
+    .class-display-box {
+        min-height: 0; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto;
+        column-gap: 10px; text-align: left; align-items: center; padding: 0;
+    }
+    .class-display-box .class-badge.xl { width: 52px; height: 52px; grid-row: 1 / span 3; }
+    .class-display-name { margin-top: 0; font-size: 1.15rem; }
+    .class-display-desc { margin-top: 2px; font-size: 0.74rem; }
+    .start-actions-wrapper { width: 100%; }
+    .start-actions-wrapper .clay-btn { flex: 1; }
+
+    .overlay-box { padding: 20px 16px; border-radius: 24px; max-height: 90dvh; }
+    .overlay-box h2 { font-size: 1.55rem; }
     .codex-card-deck-grid { grid-template-columns: repeat(3, 1fr); }
     .game-over-stats-grid, .blitz-list { grid-template-columns: 1fr; }
     .settings-options-grid { grid-template-columns: 1fr; }
-    .roll-compare { grid-template-columns: 1fr; }
-    .tray { justify-content: center; }
-    .tray-skills { order: 3; flex-basis: 100%; }
+    .roll-compare { grid-template-columns: 1fr; gap: 10px; }
+    .vs-text { display: none; }
+    .help-probability-table td:last-child { min-width: 180px; }
+}
+
+/* touch devices: no hover lift, no tap flash */
+@media (hover: none) {
+    .card-slot:hover, .upgrade-card-item:hover { transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

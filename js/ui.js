@@ -159,7 +159,7 @@ function rosterHTML(dice, team) {
             d.concealed > 0 ? 'concealed' : '',
             game.selectedDie && game.selectedDie.id === d.id ? 'selected' : '',
         ].join(' ');
-        return `<div class="die-hp-card ${cls}">
+        return `<div class="die-hp-card ${cls}" onclick="showDieInfoById('${d.id}')" title="Tap for skill details">
             ${classBadge(d.archetype)}
             <div class="die-main">
                 <div class="die-line">
@@ -294,6 +294,10 @@ function updateSkillButtons() {
             mindBtn.style.display = 'none';
         }
     }
+
+    // collapse the skill row when this team has no active skills
+    const skillRow = document.getElementById('tray-skills');
+    if (skillRow && skillRow.children) skillRow.classList.toggle('empty', ![...skillRow.children].some(b => b.style.display !== 'none'));
 }
 
 function updateZapButton() {
@@ -817,6 +821,18 @@ function showDieTooltip(die, clientX, clientY) {
     if (y + h > rect.height) y = Math.max(0, rect.height - h - 8);
     tip.style.transform = `translate(${Math.max(0, x)}px, ${y}px)`;
     tip.classList.add('show');
+}
+
+// Show a die's details from its roster card (works for touch and mouse)
+function showDieInfoById(id) {
+    const die = allDice().find(d => d.id === id);
+    if (!die || die.hp <= 0 || !canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const p = hexScreen(die.q, die.r);
+    const x = rect.left + p.x * (rect.width / canvas.width);
+    const y = rect.top + p.y * (rect.height / canvas.height);
+    if (typeof showTapInfo === 'function') showTapInfo(die, x, y, 3200);
+    else showDieTooltip(die, x, y);
 }
 
 function hideDieTooltip() {
