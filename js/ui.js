@@ -815,9 +815,21 @@ function showDieTooltip(die, clientX, clientY) {
         `;
     }
     const rect = board.getBoundingClientRect();
+    // narrow screens: dock the card across the board, on the half away from the die
+    const docked = rect.width < 560;
+    tip.classList.toggle('docked', docked);
+    if (docked) {
+        const inTopHalf = clientY - rect.top < rect.height / 2;
+        tip.classList.toggle('dock-bottom', inTopHalf);
+        tip.classList.toggle('dock-top', !inTopHalf);
+        tip.style.transform = '';
+        tip.classList.add('show');
+        return;
+    }
     let x = clientX - rect.left + 18, y = clientY - rect.top + 18;
     const w = tip.offsetWidth || 260, h = tip.offsetHeight || 160;
     if (x + w > rect.width) x = clientX - rect.left - w - 18;
+    if (x < 0) x = Math.max(0, (rect.width - w) / 2);
     if (y + h > rect.height) y = Math.max(0, rect.height - h - 8);
     tip.style.transform = `translate(${Math.max(0, x)}px, ${y}px)`;
     tip.classList.add('show');

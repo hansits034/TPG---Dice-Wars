@@ -137,6 +137,11 @@ function watchBoardSize() {
         clearTimeout(pending);
         pending = setTimeout(setupCanvas, 60);
     }).observe(wrap);
+
+    const tray = document.getElementById('controls-bar');
+    if (tray) new ResizeObserver(() => {
+        document.documentElement.style.setProperty('--tray-h', `${tray.offsetHeight}px`);
+    }).observe(tray);
 }
 
 function onKeyDown(e) {
