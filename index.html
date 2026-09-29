@@ -3,13 +3,16 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#9ACBD9">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Dice Wars: Hex Arena</title>
     <meta name="description" content="Hexagonal strategy dice battle with classes, cards and roguelike upgrades. Player vs Computer.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=3.3.0">
+    <link rel="stylesheet" href="css/style.css?v=3.4.0">
 </head>
 
 <body>
@@ -113,7 +116,7 @@
                 <button class="stats-toggle-btn" onclick="toggleStatsPanel()" id="stats-toggle-btn" title="Show or hide the battle report" aria-label="Toggle battle report">
                     <svg class="ico" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>
                 </button>
-                <div class="panel-head">
+                <div class="panel-head" onclick="if (window.innerWidth <= 1180 || window.innerHeight <= 520) toggleStatsPanel()">
                     <h3>Battle report</h3>
                 </div>
                 <div class="stats-tabs-row" role="tablist">
@@ -162,7 +165,7 @@
                 <div class="roll-dice-display" id="roll-display"></div>
                 <div class="moves-display" id="moves-display"><b>0</b> moves</div>
             </div>
-            <div class="tray-skills">
+            <div class="tray-skills" id="tray-skills">
                 <button class="clay-btn violet btn-action btn-zap" id="btn-zap" onclick="triggerPlayerMageZap()" title="Mage: hit the nearest enemy for damage equal to its distance">Zap</button>
                 <button class="clay-btn sky btn-action btn-archer" id="btn-archer" style="display:none;" onclick="triggerPlayerArcherShot()" title="Archer: shoot any enemy from range">Long shot</button>
                 <button class="clay-btn amber btn-action btn-pivot" id="btn-pivot" style="display:none;" onclick="triggerPlayerPiercerPivot()" title="Piercer: 8 damage to every enemy around this die">Pivot</button>
@@ -183,18 +186,18 @@
     <!-- OVERLAY -->
     <div id="overlay" class="hidden"></div>
 
-    <script src="js/config.js?v=3.3.0"></script>
-    <script src="js/icons.js?v=3.3.0"></script>
-    <script src="js/hex.js?v=3.3.0"></script>
-    <script src="js/audio.js?v=3.3.0"></script>
-    <script src="js/state.js?v=3.3.0"></script>
-    <script src="js/render.js?v=3.3.0"></script>
-    <script src="js/ui.js?v=3.3.0"></script>
-    <script src="js/cards.js?v=3.3.0"></script>
-    <script src="js/events.js?v=3.3.0"></script>
-    <script src="js/ai.js?v=3.3.0"></script>
-    <script src="js/game.js?v=3.3.0"></script>
-    <script src="js/main.js?v=3.3.0"></script>
+    <script src="js/config.js?v=3.4.0"></script>
+    <script src="js/icons.js?v=3.4.0"></script>
+    <script src="js/hex.js?v=3.4.0"></script>
+    <script src="js/audio.js?v=3.4.0"></script>
+    <script src="js/state.js?v=3.4.0"></script>
+    <script src="js/render.js?v=3.4.0"></script>
+    <script src="js/ui.js?v=3.4.0"></script>
+    <script src="js/cards.js?v=3.4.0"></script>
+    <script src="js/events.js?v=3.4.0"></script>
+    <script src="js/ai.js?v=3.4.0"></script>
+    <script src="js/game.js?v=3.4.0"></script>
+    <script src="js/main.js?v=3.4.0"></script>
 </body>
 
 </html>

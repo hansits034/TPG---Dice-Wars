@@ -133,9 +133,8 @@ function hexScreen(q, r) {
 }
 
 // ---------- canvas sizing ----------
-function calcHexSize(availW, availH) {
-    // Island spans DECOR_RADIUS rings: width ~ sqrt3 * (2R+1), height ~ 1.5 * 2R + 2 (+ cliff)
-    const R = DECOR_RADIUS;
+function calcHexSize(availW, availH, R = DECOR_RADIUS) {
+    // Island spans R rings: width ~ sqrt3 * (2R+1), height ~ 1.5 * 2R + 2 (+ cliff)
     const sw = availW / (SQRT3 * (2 * R + 1) + 0.6);
     const sh = availH / (1.5 * 2 * R + 3.2);
     return Math.max(14 * DPR, Math.min(54 * DPR, Math.floor(Math.min(sw, sh))));
@@ -148,11 +147,13 @@ function setupCanvas() {
     let cssH = wrap ? wrap.clientHeight : 0;
     if (!cssW || !cssH) { cssW = Math.min(window.innerWidth - 32, 760); cssH = Math.min(window.innerHeight * 0.6, 640); }
 
-    HEX_SIZE = calcHexSize(cssW * DPR, cssH * DPR);
-    const R = DECOR_RADIUS;
+    // On narrow screens fit the playable arena and let the scenery ring run off the edges,
+    // so tiles stay big enough to tap
+    const R = cssW < 700 ? GRID_RADIUS + 0.62 : DECOR_RADIUS;
+    HEX_SIZE = calcHexSize(cssW * DPR, cssH * DPR, R);
     const boardW = HEX_SIZE * (SQRT3 * (2 * R + 1) + 0.6);
     const boardH = HEX_SIZE * (1.5 * 2 * R + 3.2);
-    canvas.width = Math.ceil(Math.min(cssW * DPR, boardW + HEX_SIZE));
+    canvas.width = Math.ceil(R < DECOR_RADIUS ? cssW * DPR : Math.min(cssW * DPR, boardW + HEX_SIZE));
     canvas.height = Math.ceil(Math.min(cssH * DPR, boardH + HEX_SIZE * 0.5));
     canvas.style.width = (canvas.width / DPR) + 'px';
     canvas.style.height = (canvas.height / DPR) + 'px';
