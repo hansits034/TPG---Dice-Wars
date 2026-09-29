@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@500;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css?v=3.4.2">
+    <link rel="stylesheet" href="css/style.css?v=3.5.0">
 </head>
 
 <body>
@@ -131,6 +131,7 @@
 
         <main class="board">
             <div id="game-message" role="status" aria-live="polite">Waiting to start…</div>
+            <div id="coach-tip" role="note" aria-live="polite"></div>
             <div id="canvas-wrapper">
                 <canvas id="canvas"></canvas>
             </div>
@@ -166,7 +167,7 @@
                 <div class="moves-display" id="moves-display"><b>0</b> moves</div>
             </div>
             <div class="tray-skills" id="tray-skills">
-                <button class="clay-btn violet btn-action btn-zap" id="btn-zap" onclick="triggerPlayerMageZap()" title="Mage: hit the nearest enemy for damage equal to its distance">Zap</button>
+                <button class="clay-btn violet btn-action btn-zap" id="btn-zap" onclick="clearPreview(); triggerPlayerMageZap()" onmouseenter="previewZap()" onmouseleave="clearPreview()" title="Mage: hit the nearest enemy for damage equal to its distance">Zap</button>
                 <button class="clay-btn sky btn-action btn-archer" id="btn-archer" style="display:none;" onclick="triggerPlayerArcherShot()" title="Archer: shoot any enemy from range">Long shot</button>
                 <button class="clay-btn amber btn-action btn-pivot" id="btn-pivot" style="display:none;" onclick="triggerPlayerPiercerPivot()" title="Piercer: 8 damage to every enemy around this die">Pivot</button>
                 <button class="clay-btn plain btn-action btn-cancel-pivot" id="btn-cancel-pivot" style="display:none;" onclick="cancelPivotPreview()">Cancel pivot</button>
@@ -186,18 +187,20 @@
     <!-- OVERLAY -->
     <div id="overlay" class="hidden"></div>
 
-    <script src="js/config.js?v=3.4.2"></script>
-    <script src="js/icons.js?v=3.4.2"></script>
-    <script src="js/hex.js?v=3.4.2"></script>
-    <script src="js/audio.js?v=3.4.2"></script>
-    <script src="js/state.js?v=3.4.2"></script>
-    <script src="js/render.js?v=3.4.2"></script>
-    <script src="js/ui.js?v=3.4.2"></script>
-    <script src="js/cards.js?v=3.4.2"></script>
-    <script src="js/events.js?v=3.4.2"></script>
-    <script src="js/ai.js?v=3.4.2"></script>
-    <script src="js/game.js?v=3.4.2"></script>
-    <script src="js/main.js?v=3.4.2"></script>
+    <script src="js/config.js?v=3.5.0"></script>
+    <script src="js/icons.js?v=3.5.0"></script>
+    <script src="js/hex.js?v=3.5.0"></script>
+    <script src="js/audio.js?v=3.5.0"></script>
+    <script src="js/state.js?v=3.5.0"></script>
+    <script src="js/render.js?v=3.5.0"></script>
+    <script src="js/ui.js?v=3.5.0"></script>
+    <script src="js/preview.js?v=3.5.0"></script>
+    <script src="js/tips.js?v=3.5.0"></script>
+    <script src="js/cards.js?v=3.5.0"></script>
+    <script src="js/events.js?v=3.5.0"></script>
+    <script src="js/ai.js?v=3.5.0"></script>
+    <script src="js/game.js?v=3.5.0"></script>
+    <script src="js/main.js?v=3.5.0"></script>
 </body>
 
 </html>

@@ -917,6 +917,9 @@ async function beginPlayerTurn() {
 
     game.phase = 'PLAYER_TURN';
     setMessage(`Your turn. Pick one of your dice to move.`);
+    showTip('select');
+    if (document.getElementById('tray-skills') && !document.getElementById('tray-skills').classList.contains('empty')) showTip('skills');
+    if (game.wave >= 2) showTip('enemyInfo');
     setButtons(true, false);
 
     if (fastAutoMode) {
@@ -925,6 +928,7 @@ async function beginPlayerTurn() {
 }
 
 function selectDie(die) {
+    clearPreview();
     if (die.frozen > 0) {
         setMessage(`${archName(die.archetype)} is frozen for ${die.frozen} more turn${die.frozen>1?'s':''}.`);
         return;
@@ -953,12 +957,15 @@ function selectDie(die) {
     }
 
     const attacks = [...reachable.values()].filter(v => v.isAttack);
+    completeTip('select');
+    showTip('moveAttack');
     const effDmg = getDieEffectiveDamage(die);
     setMessage(`${archName(die.archetype)}: ${die.moveAllowance} ${die.moveAllowance === 1 ? 'move' : 'moves'}, hits for ${effDmg}${die.damageMultiplier>1?' ×'+die.damageMultiplier:''}. ${attacks.length ? `${attacks.length} enemy in reach.` : 'Click a lit tile to move.'}`);
     setButtons(true, true);
 }
 
 function deselectDie() {
+    clearPreview();
     if (game.activeCard) {
         cancelCard();
         return;
@@ -1070,29 +1077,40 @@ function handleDieDeath(die) {
 }
 
 // Shared melee resolution for player & CPU once the attacker has stepped onto the enemy hex
-function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
-    let rawDamage = getDieEffectiveDamage(die) * die.damageMultiplier;
+// Pure melee damage calculation, shared by the real attack and the attack preview
+function computeMeleeDamage(die, enemyDie, dist) {
+    const face = getDieEffectiveDamage(die);
+    const mult = die.damageMultiplier || 1;
+    let raw = face * mult;
 
     // Ninja Momentum Passive (+1 DMG per remaining move after attacking, max +5 DMG)
+    let momentum = 0;
     if (getSkillLevel(die, 'momentum') > 0 || die.archetype === 'ninja') {
-        const ninjaBonus = Math.min(5, Math.max(0, die.moveAllowance - info.dist));
-        if (ninjaBonus > 0) {
-            rawDamage += ninjaBonus;
-            addFloatingText(`🥷 +${ninjaBonus} Momentum DMG!`, die.q, die.r, '#60a5fa', 16);
-        }
+        momentum = Math.min(5, Math.max(0, die.moveAllowance - dist));
+        raw += momentum;
     }
 
     // Piercer Tank Killer (+10%/15%/20%/25% of target enemy HP)
+    let tankKiller = 0;
     const tankKillerLvl = getSkillLevel(die, 'tankKiller');
     if (tankKillerLvl > 0) {
         const pct = tankKillerLvl === 1 ? 0.10 : tankKillerLvl === 2 ? 0.15 : tankKillerLvl === 3 ? 0.20 : 0.25;
-        const tankBonus = Math.max(1, Math.round(enemyDie.hp * pct));
-        rawDamage += tankBonus;
-        addFloatingText(`🎯 Tank Killer +${tankBonus} DMG!`, die.q, die.r, '#f59e0b', 16);
+        tankKiller = Math.max(1, Math.round(enemyDie.hp * pct));
+        raw += tankKiller;
     }
 
-    rawDamage = Math.max(1, rawDamage - getToughnessReduction(enemyDie));
-    const damage = enemyDie.halfDamage > 0 ? Math.ceil(rawDamage / 2) : rawDamage;
+    const toughness = getToughnessReduction(enemyDie);
+    raw = Math.max(1, raw - toughness);
+    const halved = enemyDie.halfDamage > 0;
+    const damage = halved ? Math.ceil(raw / 2) : raw;
+    return { damage, face, mult, momentum, tankKiller, toughness, halved };
+}
+
+function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
+    const calc = computeMeleeDamage(die, enemyDie, info.dist);
+    if (calc.momentum > 0) addFloatingText(`🥷 +${calc.momentum} Momentum DMG!`, die.q, die.r, '#60a5fa', 16);
+    if (calc.tankKiller > 0) addFloatingText(`🎯 Tank Killer +${calc.tankKiller} DMG!`, die.q, die.r, '#f59e0b', 16);
+    const damage = calc.damage;
     const teamTag = die.team === 'cpu' ? '🔴 CPU ' : '';
 
     die.hasAttackedThisTurn = true;
@@ -1146,6 +1164,7 @@ function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
         enemyDie.bleedSourceTeam = die.team;
         enemyDie.bleedTurns = 3;
         enemyDie.antiHealTurns = 3;
+        if (enemyDie.team === 'player') showTip('bleed');
         { const p = dieFxPos(enemyDie); spawnParticles(p.x, p.y, '#B5304F', 10, 2, 700, 2.5); }
         if (wasBleeding) {
             addFloatingText(`🩸 Bleed Refreshed (${enemyDie.bleedStacks} stacks, 3 Turns)!`, enemyDie.q, enemyDie.r, '#ef4444', 16);
@@ -1225,6 +1244,9 @@ async function performMeleeAttack(die, path, info, tq, tr) {
 async function handlePlayerMove(tq, tr) {
     if (!game.reachable || !game.reachable.has(hKey(tq, tr))) return;
     if (game.phase !== 'PLAYER_TURN') return;
+    clearPreview();
+    completeTip('moveAttack');
+    showTip('endTurn');
 
     const info = game.reachable.get(hKey(tq, tr));
     const die = game.selectedDie;
@@ -1291,6 +1313,8 @@ async function handlePlayerMove(tq, tr) {
 function endTurn() {
     if (game.phase !== 'PLAYER_TURN' && game.phase !== 'PLAYER_CARD_TARGET') return;
     game.phase = 'TURN_ENDING';
+    clearPreview();
+    completeTip('endTurn');
     game.selectedDie = null;
     game.reachable = null;
     game.parents = null;
@@ -1408,6 +1432,7 @@ function handleMindControlEnemySelect(q, r) {
 }
 
 async function handleArcherTargetSelect(q, r) {
+    clearPreview();
     const enemy = getDieAt(q, r);
     if (enemy && enemy.team === 'cpu' && enemy.hp > 0 && !enemy.concealed && game.archerSource) {
         game.selectedDie = null;

@@ -408,6 +408,7 @@ function openGameMenuModal() {
                 </button>
                 <button class="clay-btn gold" onclick="hideOverlay(); startGame();">${iconSVG('restart')}Restart match</button>
                 <button class="clay-btn berry" onclick="hideOverlay(); quitToMainMenu();">${iconSVG('home')}Quit to main menu</button>
+                <button class="clay-btn plain" onclick="resetTips(); hideOverlay(); setMessage('Tips will show again as things come up.');">${iconSVG('help')}Show tips again</button>
                 <button class="clay-btn teal" onclick="hideOverlay();">${iconSVG('right')}Resume</button>
             </div>
         </div>

@@ -28,6 +28,7 @@ async function triggerRoguelikeUpgrade() {
             addFloatingText(`✨ ${choice.skill.name} Lvl ${choice.skill.curLvl}!`, choice.die.q, choice.die.r, '#fbbf24', 20);
             SFX.powerUp();
         } else {
+            showTip('upgrade');
             await new Promise(resolve => {
                 window._chooseUpgrade = function(idx) {
                     const choice = choices[idx];
@@ -133,6 +134,7 @@ function checkEventTilePickup(die) {
 
     if (die.team === 'player') {
         showCardPopup(card, 'player');
+        showTip('cards');
     }
     updateCardHand();
 }
@@ -222,6 +224,7 @@ function shiftArena(dir) {
 
 // Arena events: a short banner, then one of three variants plays out on the board
 async function triggerArenaBlitz() {
+    showTip('event');
     const blitzTypes = ['tornado', 'void', 'burning', 'vine', 'bees', 'magician'];
     const chosen = blitzTypes[Math.floor(Math.random() * blitzTypes.length)];
     const now = () => performance.now();
@@ -438,6 +441,7 @@ function triggerTileEffectOnDie(die) {
     if (game.burningTiles && game.burningTiles.has(k)) {
         const kind = game.burningTiles.get(k).kind || 'fire';
         const hz = HAZARD_KINDS[kind] || HAZARD_KINDS.fire;
+        if (die.team === 'player') showTip('hazard');
         applyIndirectDamage(die, hz.dmg, hz.label, hz.color);
         if (hz.poison) die.antiHealTurns = Math.max(die.antiHealTurns, hz.poison);
         if (checkWin()) return;
@@ -446,6 +450,7 @@ function triggerTileEffectOnDie(die) {
     if (game.vineTraps && game.vineTraps.has(k)) {
         const kind = game.vineTraps.get(k).kind || 'vines';
         const sn = SNARE_KINDS[kind] || SNARE_KINDS.vines;
+        if (die.team === 'player') showTip('hazard');
         die.moveAllowance = 0;
         if (kind === 'medusa') { die.frozen = Math.max(die.frozen, 1); die.petrified = true; SFX.block(); }
         else if (kind === 'snow') { die.moveDebuff = Math.max(die.moveDebuff, 1); SFX.freeze(); }

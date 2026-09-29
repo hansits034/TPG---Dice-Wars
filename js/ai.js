@@ -164,6 +164,7 @@ async function playerAutoBotTurn() {
 
 async function beginCpuTurn() {
     if (game.phase === 'GAME_OVER') return;
+    clearPreview();
     game.phase = 'CPU_TURN';
     game.currentTurn = 'cpu';
     game.turnEnding = false;

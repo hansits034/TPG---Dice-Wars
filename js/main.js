@@ -23,10 +23,33 @@ function onCanvasClick(e) {
 
     if (!isValidHex(hex.q, hex.r)) { if (lastPointerType !== 'mouse') hideDieTooltip(); return; }
 
-    if (lastPointerType !== 'mouse') {
+    const touch = lastPointerType !== 'mouse';
+    const key = hKey(hex.q, hex.r);
+    const reachableHere = game.phase === 'PLAYER_TURN' && game.selectedDie && game.reachable && game.reachable.has(key);
+    if (touch && !reachableHere && game.phase !== 'PLAYER_ARCHER_TARGET') {
         const tapped = getDieAt(hex.q, hex.r);
         if (tapped && tapped.team !== 'player' && !tapped.concealed) showTapInfo(tapped, e.clientX, e.clientY);
         else hideDieTooltip();
+    }
+
+    // Touch: the first tap on a move/attack tile previews it, a second tap on the same tile commits
+    if (touch && reachableHere && !(game.pivotPreview && game.pivotPiercer)) {
+        if (!game.preview || game.preview.key !== key) {
+            const pv = previewForHex(hex.q, hex.r);
+            if (pv) {
+                hideDieTooltip();
+                setPreview({ ...pv, touch: true });
+                if (pv.kind === 'move') setMessage(`Move here? ${pv.movesLeft} ${pv.movesLeft === 1 ? 'move' : 'moves'} left after. Tap again to confirm.`);
+                return;
+            }
+        }
+    }
+    if (touch && game.phase === 'PLAYER_ARCHER_TARGET' && game.archerSource) {
+        const t = getDieAt(hex.q, hex.r);
+        if (t && t.team === 'cpu' && !t.concealed && (!game.preview || game.preview.key !== key)) {
+            setPreview({ ...buildRangedPreview(game.archerSource, t), key, touch: true });
+            return;
+        }
     }
 
     if (game.phase === 'PLAYER_CARD_TARGET') {
@@ -98,10 +121,22 @@ function onCanvasMouseMove(e) {
 
     if (isValidHex(hex.q, hex.r)) {
         hoveredHex = hex;
-        // show a skill card for any visible die under the cursor
-        const hovered = getDieAt(hex.q, hex.r);
-        if (hovered && (!hovered.concealed || hovered.team === 'player')) showDieTooltip(hovered, e.clientX, e.clientY);
-        else hideDieTooltip();
+        const key = hKey(hex.q, hex.r);
+        let pv = null;
+        if (game.phase === 'PLAYER_TURN') pv = previewForHex(hex.q, hex.r);
+        else if (game.phase === 'PLAYER_ARCHER_TARGET' && game.archerSource) {
+            const t = getDieAt(hex.q, hex.r);
+            if (t && t.team === 'cpu' && !t.concealed) pv = { ...buildRangedPreview(game.archerSource, t), key };
+        }
+        if (pv) {
+            if (!game.preview || game.preview.key !== pv.key) setPreview(pv);
+        } else {
+            if (game.preview && game.preview.kind !== 'zap') clearPreview();
+            // show a skill card for any visible die under the cursor
+            const hovered = getDieAt(hex.q, hex.r);
+            if (hovered && (!hovered.concealed || hovered.team === 'player')) showDieTooltip(hovered, e.clientX, e.clientY);
+            else hideDieTooltip();
+        }
         if (game.phase === 'PLAYER_TURN') {
             const d = getDieAt(hex.q, hex.r);
             if (d && d.team === 'player' && d.hp > 0) {
@@ -121,7 +156,15 @@ function onCanvasMouseMove(e) {
     }
 }
 
-function onCanvasMouseLeave() { hoveredHex = null; canvas.style.cursor = 'default'; hideDieTooltip(); }
+function onCanvasMouseLeave() { hoveredHex = null; canvas.style.cursor = 'default'; hideDieTooltip(); clearPreview(); }
+
+// Hovering the Zap button shows who it will hit
+function previewZap() {
+    if (game.phase !== 'PLAYER_TURN') return;
+    const mage = aliveDice('player').find(d => (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) && (d.zapStacks || 0) > 0);
+    const pv = mage && buildZapPreview(mage);
+    if (pv) setPreview({ ...pv, key: 'zap' });
+}
 function onResize() { setupCanvas(); }
 
 // Re-fit the board whenever its box changes size (rotation, panels opening, fonts loading)

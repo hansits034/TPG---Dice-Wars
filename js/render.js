@@ -1831,6 +1831,10 @@ function render() {
         }
     }
 
+    // movement path of the action being previewed
+    if (game.preview && !['PLAYER_TURN', 'PLAYER_ARCHER_TARGET'].includes(game.phase)) clearPreview();
+    drawPreviewPath(now);
+
     // Pass 2: things that stand on tiles, in depth order
     const standing = [];
     for (const t of tiles) {
@@ -1871,6 +1875,7 @@ function render() {
     drawCloudShadows(now, ds);
 
     drawBoardFx(now);
+    drawPreviewBadges();
 
     // Psychic Push: soft violet vignette
     if (game.psychicAura) {
