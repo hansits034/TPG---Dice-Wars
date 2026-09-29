@@ -302,6 +302,7 @@ canvas { display: block; cursor: pointer; touch-action: manipulation; }
 
 #game-message {
     position: absolute; top: 4px; left: 50%; transform: translateX(-50%); z-index: 5;
+    pointer-events: none;
     max-width: min(92%, 620px);
     padding: 9px 20px; border-radius: var(--r-chip);
     background: #fff; color: var(--ink);
@@ -325,6 +326,7 @@ canvas { display: block; cursor: pointer; touch-action: manipulation; }
     transition: opacity 0.3s;
 }
 .die-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.die-main .hp-bar-outer { flex: none; width: 100%; }
 .die-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .die-name { font-weight: 900; font-size: 0.86rem; display: flex; align-items: baseline; gap: 5px; min-width: 0; margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .die-name small { font-weight: 700; font-size: 0.7rem; color: var(--ink-faint); }
@@ -753,6 +755,10 @@ canvas { display: block; cursor: pointer; touch-action: manipulation; }
     opacity: 0; transition: opacity 0.12s;
 }
 #die-tooltip.cpu { border-top-color: var(--cpu); }
+#die-tooltip.docked { left: 6px; right: 6px; width: auto; max-height: 62%; overflow: hidden; }
+#die-tooltip.docked.dock-top { top: 6px; bottom: auto; }
+#die-tooltip.docked.dock-bottom { top: auto; bottom: 6px; }
+#die-tooltip.docked .die-skills { grid-template-columns: 1fr; }
 #die-tooltip.show { opacity: 1; }
 .tip-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
 .tip-name { font-family: var(--font-display); font-size: 1.1rem; }
@@ -896,35 +902,45 @@ body::before {
 
     /* compact horizontal team strips; tap a die for details */
     .team-panel { max-height: none; }
-    .dice-hp-row { flex-direction: row; overflow-x: auto; gap: 8px; scroll-snap-type: x proximity; padding-bottom: 4px; }
-    .die-hp-card { flex: 1 0 150px; scroll-snap-align: start; padding: 6px 8px; column-gap: 8px; cursor: pointer; }
-    .die-hp-card .class-badge { width: 28px; height: 28px; }
+    /* all dice fit across the screen; extra dice (splits, clones) wrap onto a new row */
+    .dice-hp-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; overflow: visible; padding: 0; }
+    .die-hp-card { padding: 6px 7px; column-gap: 6px; cursor: pointer; min-width: 0; }
+    .die-hp-card .class-badge { width: 24px; height: 24px; }
     .die-name small { display: none; }
-    .die-name { font-size: 0.8rem; }
+    .die-name { font-size: 0.74rem; }
+    .die-line { gap: 4px; }
+    .die-sub { gap: 3px; }
+    .tag.mini { padding: 0 5px; font-size: 0.6rem; }
+    .tag.mini .ico { width: 10px; height: 10px; }
     .hp-num { font-size: 0.66rem; }
     .die-hp-card .sk-mini { display: none; }
     .die-hp-card .hp-num { display: none; }
-    .die-dmg-chip { font-size: 0.78rem; padding: 2px 6px; }
-    .die-dmg-chip small { display: none; }
+    .die-dmg-chip { display: none; } /* damage is shown on the die face itself */
 
-    .board { height: min(calc(100vw - 20px), 64vh); height: min(calc(100vw - 20px), 64dvh); min-height: 300px; padding-top: 0; }
-    #game-message { position: absolute; top: 4px; transform: translateX(-50%); max-width: 94%; padding: 7px 14px; font-size: 0.82rem; }
+    /* status message sits on its own line above the board so it never covers tiles */
+    .board { height: auto; padding-top: 0; gap: 6px; }
+    #canvas-wrapper { flex: none; width: 100%; height: min(calc(100vw - 20px), 60vh); height: min(calc(100vw - 20px), 60dvh); min-height: 280px; }
+    #game-message { position: static; transform: none; width: 100%; max-width: none; padding: 7px 12px; font-size: 0.8rem; border-radius: 14px; box-shadow: 0 3px 0 var(--clay-lip); }
 
     /* hand: one swipeable row of compact cards */
     .card-hand-panel { min-height: 0; }
-    .card-slots { display: flex; grid-template-columns: none; overflow-x: auto; overflow-y: visible; gap: 8px; padding: 2px 2px 8px; scroll-snap-type: x proximity; }
-    .card-slot { flex: 0 0 auto; flex-direction: row; align-items: center; min-height: 0; padding: 8px 12px 8px 8px; gap: 8px; scroll-snap-align: start; }
+    .card-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; gap: 8px; padding: 2px 2px 6px; }
+    .card-slot { flex-direction: row; align-items: center; min-height: 0; min-width: 0; padding: 8px 12px 8px 8px; gap: 8px; }
     .card-slot .card-art { width: 34px; height: 34px; border-radius: 11px; }
     .card-slot .card-art .ico { width: 20px; height: 20px; }
     .card-slot .card-desc { display: none; }
-    .card-slot .card-name { font-size: 0.9rem; white-space: nowrap; }
+    .card-slot .card-name { font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
     .card-rarity { top: 6px; right: 6px; width: 7px; height: 7px; }
     .empty-hand { padding: 4px; font-size: 0.8rem; }
 
-    /* action tray stays reachable while scrolling */
+    /* action tray pinned to the bottom of the screen; the page reserves room for it */
+    #game-screen.active { padding-bottom: calc(var(--tray-h, 132px) + 18px + env(safe-area-inset-bottom)); }
     .tray {
-        position: sticky; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 20;
+        position: fixed; z-index: 40;
+        left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right));
+        bottom: max(8px, env(safe-area-inset-bottom));
         padding: 10px; gap: 8px; border-radius: 20px; justify-content: space-between;
+        box-shadow: 0 6px 0 var(--clay-lip), 0 -6px 24px rgba(47, 42, 69, 0.18), inset 0 2px 0 rgba(255,255,255,0.95);
     }
     .tray-roll { gap: 8px; }
     .roll-die-box { width: 32px; height: 32px; font-size: 1.05rem; border-radius: 10px; }
@@ -939,7 +955,7 @@ body::before {
     .tray-turn { order: 3; margin-left: auto; gap: 8px; }
     .clay-btn { padding: 9px 14px; min-height: 44px; font-size: 0.95rem; }
 
-    #die-tooltip { width: min(270px, calc(100vw - 40px)); }
+    .tray-skills { overflow-x: visible; flex-wrap: wrap; }
     .blitz-announcement { top: 70px; max-width: calc(100vw - 24px); padding: 10px 16px 10px 10px; }
     .blitz-title { font-size: 1.2rem; }
     .blitz-desc { font-size: 0.78rem; }
@@ -948,6 +964,13 @@ body::before {
 
 /* ---------- small phones ---------- */
 @media (max-width: 480px) {
+    .hud-chip { white-space: nowrap; }
+    .topbar { gap: 6px; }
+    .topbar-actions { gap: 5px; }
+    .round-btn { width: 36px; height: 36px; }
+    .round-btn .ico { width: 19px; height: 19px; }
+    #auto-test-btn { padding: 7px 9px; }
+    .hud-chip.timer small { display: none; }
     .hud-chip.daytime span, .hud-chip.clock { display: none; }
     .hud-chip.daytime { padding: 5px 8px; }
     .tray-turn .clay-btn.btn-deselect { padding: 9px 11px; }
