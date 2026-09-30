@@ -1257,3 +1257,33 @@ body.mode-puzzle #cpu-dice-hp .die-dmg-chip { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- responsive fixes: tray rows, boss card ---------- */
+.moves-display { flex-wrap: wrap; row-gap: 4px; min-width: 0; }
+.per-die-moves { flex-wrap: wrap; }
+.dice-hp-row > .boss-card { grid-column: 1 / -1; }
+@media (max-width: 820px) {
+    /* roll on one line; "N moves" + per-die chips drop to their own full-width line when they don't fit */
+    .tray-roll { flex-wrap: wrap; row-gap: 6px; }
+    .roll-dice-display { min-height: 34px; }
+    .moves-display { flex: 1 1 auto; align-items: center; }
+    .per-die-moves { margin-left: auto; }
+    /* boss: one full-width, compact card instead of a squeezed column */
+    .boss-card { padding: 8px 10px; gap: 6px; }
+    .boss-head { gap: 8px; }
+    .boss-head .class-badge { width: 32px; height: 32px; }
+    .boss-name { font-size: 1rem; line-height: 1.1; }
+    .boss-phase { font-size: 0.7rem; }
+    .boss-bar { height: 12px; }
+    .boss-hp, .boss-score { font-size: 0.72rem; }
+}
+@media (max-width: 380px) {
+    .roll-plus, .roll-eq { display: none; }
+    .roll-die-box { width: 28px; height: 28px; font-size: 0.95rem; }
+    .die-moves { font-size: 0.78rem; }
+}
+@media (max-width: 420px) {
+    .hud-chip.puzzle { gap: 6px; padding-left: 8px; padding-right: 6px; }
+    .hud-chip.puzzle .pz-label, .puzzle-hint-btn .hint-label { display: none; }
+    .puzzle-hint-btn { padding: 4px 7px; }
+}

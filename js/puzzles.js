@@ -400,9 +400,9 @@ function updatePuzzleHud() {
     if (!isPuzzle()) { el.style.display = 'none'; return; }
     const P = currentPuzzle();
     el.style.display = '';
-    el.innerHTML = `<span>Puzzle ${game.puzzleIndex + 1}</span>${game.puzzleActionsLeft != null
+    el.innerHTML = `<span class="pz-label">Puzzle ${game.puzzleIndex + 1}</span>${game.puzzleActionsLeft != null
         ? `<b class="${game.puzzleActionsLeft <= 1 ? 'low' : ''}">${game.puzzleActionsLeft}/${P.actions} actions</b>` : ''}
-        <button class="puzzle-hint-btn" onclick="showPuzzleHint()" title="Show the next step (H)">${iconSVG('puzzle')}Hint</button>`;
+        <button class="puzzle-hint-btn" onclick="showPuzzleHint()" title="Show the next step (H)">${iconSVG('puzzle')}<span class="hint-label">Hint</span></button>`;
 }
 
 const TIER_NAMES = { easy: 'Easy', mid: 'Tricky', hard: 'Hard' };
