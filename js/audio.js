@@ -250,12 +250,11 @@ function startBGM() {
     try { ctx = getAudio(); } catch (e) { return; }
     BGM.nextTime = ctx.currentTime + 0.1;
     BGM.step = 0;
-    const eighth = 60 / BGM.bpm / 2;
     // look-ahead scheduler: stays in time even when the page is busy animating
     bgmTimer = setInterval(() => {
         while (BGM.nextTime < ctx.currentTime + 0.2) {
             if (bgmEnabled) scheduleBgmStep(BGM.step, BGM.nextTime);
-            BGM.nextTime += eighth;
+            BGM.nextTime += 60 / BGM.bpm / 2;
             BGM.step++;
             if (BGM.step >= BGM.bars.length * 8) { BGM.step = 0; BGM.loop++; }
         }

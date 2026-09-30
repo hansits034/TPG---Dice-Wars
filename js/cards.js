@@ -109,15 +109,26 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             } else {
                 const prevHp = die.hp;
                 const maxHp = die.maxHp || MAX_HP;
-                const docBonus = aliveDice(team).some(d => d.archetype === 'doctor' || getSkillLevel(d, 'doctorMastery') > 0) ? 5 : 0;
+                const bonusDoctor = aliveDice(team).find(d => d.archetype === 'doctor' || getSkillLevel(d, 'doctorMastery') > 0);
+                const docBonus = bonusDoctor ? 5 : 0;
                 const healAmt = 7 + docBonus;
                 die.hp = Math.min(maxHp, die.hp + healAmt);
                 const actual = die.hp - prevHp;
-                if (team === 'player' && game.stats && actual > 0) {
-                    game.stats.healDone.cards = (game.stats.healDone.cards || 0) + actual;
-                    game.stats.healDone.total += actual;
+                // Who gets credit: a Heal Pill from Noble Saviour is the doctor's entirely;
+                // otherwise the card's base 7 counts as card healing and the Medical Mastery +5 as the doctor's
+                const pillDoctor = card.fromDoctorId ? allDice().find(d => d.id === card.fromDoctorId) : null;
+                const doctor = pillDoctor || bonusDoctor;
+                const doctorShare = pillDoctor ? actual : (bonusDoctor ? Math.max(0, actual - 7) : 0);
+                const cardShare = actual - doctorShare;
+                if (doctor) creditHeal(doctor, doctorShare);
+                if (team === 'player' && game.stats && cardShare > 0) {
+                    game.stats.healDone.cards = (game.stats.healDone.cards || 0) + cardShare;
+                    game.stats.healDone.total += cardShare;
                     updateStatsDisplay();
                 }
+                const teamTag = team === 'cpu' ? 'CPU ' : '';
+                const source = pillDoctor ? `${teamTag}Doctor's Heal Pill` : `${teamTag}Heal card${bonusDoctor ? ' (+5 from Doctor)' : ''}`;
+                addCombatLog(`${source} restored ${actual} HP to ${archName(die.archetype)}`, '', '#34d399');
                 addFloatingText(`+${healAmt} HP`, die.q, die.r, '#34d399', 20);
                 fxHeal(die);
                 SFX.heal();
@@ -130,6 +141,9 @@ function applyCardWithTarget(card, team, handIdx, targets) {
             const die = targets[0];
             die.moveAllowance = (die.moveAllowance || 0) + 3;
             addFloatingText('👟 +3 Moves!', die.q, die.r, '#38bdf8', 18);
+            if (team === 'player' && die.hasAttackedThisTurn && !die.bonusAttackReady && !die.attackAgainActive) {
+                setMessage(`${archName(die.archetype)} already attacked this turn, so Sprint only lets it move. Use Attack Again to strike again.`);
+            }
             SFX.powerUp();
             const p = hexToPixel(die.q, die.r);
             spawnParticles(p.x+gridCenterX, p.y+gridCenterY, '#38bdf8', 15, 2, 600, 3);

@@ -8,7 +8,31 @@ const SQRT3 = Math.sqrt(3);
 const MAX_HP = 50;
 const BASE_MAX_HAND = 3;
 const EVENT_TILE_INTERVAL = 3; // every 3 waves
-const BLITZ_INTERVAL = 5;      // every 5 waves
+const BLITZ_INTERVAL = 5;      // legacy, see isBlitzWave()
+// Arena events speed up as the match drags on:
+// waves 5, 10, 14, 18, 21, 24, 27, 30, 32, 34, 36, then every single wave
+const BLITZ_GAPS = [5, 5, 4, 4, 3, 3, 3, 3, 2, 2, 2];
+const BLITZ_EVERY_WAVE_AFTER = BLITZ_GAPS.reduce((a, b) => a + b, 0); // 36
+function isBlitzWave(w) {
+    let x = 0;
+    for (const g of BLITZ_GAPS) {
+        x += g;
+        if (x === w) return true;
+        if (x > w) return false;
+    }
+    return w > x;
+}
+// From this wave every arena event is brutal: 50% more tiles/units, double damage, traps last 2 waves longer
+const BRUTAL_WAVE = 40;
+function isBrutalWave(w) { return w >= BRUTAL_WAVE; }
+const brutalTiles = (n, brutal) => brutal ? Math.ceil(n * 1.5) : n;
+const brutalDamage = (n, brutal) => brutal ? n * 2 : n;
+const brutalTrap = (n, brutal) => brutal ? n + 2 : n;
+
+function nextBlitzWave(w) {
+    for (let i = w + 1; i < w + 10; i++) if (isBlitzWave(i)) return i;
+    return w + 1;
+}
 const UPGRADE_INTERVAL = 4;    // every 4 waves
 const EVENT_TILES_PER_SPAWN = 3;
 const TURN_TIME_LIMIT = 30;
@@ -48,7 +72,7 @@ const ARCHETYPES = [
     {
         id: 'telekinator', name: 'Telekinator', icon: '',
         skills: [
-            { id: 'psychic', name: 'Psychic Push', desc: 'Psychic ability (40% chance at Lvl 1, 65% at Lvl 2, 90% at Lvl 3) to push 1 enemy die to chosen empty tile at start of turn', maxLvl: 3, curLvl: 1 },
+            { id: 'psychic', name: 'Psychic Push', desc: 'Psychic ability (40% chance at Lvl 1, 65% at Lvl 2, 90% at Lvl 3) to push any 1 die, enemy or ally, to a chosen empty tile at start of turn', maxLvl: 3, curLvl: 1 },
             { id: 'hypno', name: 'Hypno Steal', desc: 'Every 3 waves, 40% chance (70% at Lvl 2) to steal/destroy enemy card', maxLvl: 2, curLvl: 0 },
             { id: 'mindControl', name: 'Mind Control', desc: 'Active skill (5 wave CD, disabled if 1 enemy remains): Control 1 enemy die to fight for your team for 2 waves! Reverts with -6 HP recoil', maxLvl: 1, curLvl: 0 }
         ]

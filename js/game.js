@@ -467,6 +467,7 @@ async function tickWaveEffects() {
                         q: emptyHex.q,
                         r: emptyHex.r,
                         team: d.team,
+                        ownerId: d.id,
                         damage: baseZombieDmg,
                         wavesLeft: wavesLeft
                     });
@@ -512,7 +513,7 @@ async function tickWaveEffects() {
                 if (hand.length < maxH) {
                     const healCard = CARD_DEFS.find(c => c.id === 'heal');
                     if (healCard) {
-                        hand.push({ ...healCard });
+                        hand.push({ ...healCard, name: 'Heal Pill', fromDoctorId: d.id });
                         if (d.team === 'player') {
                             addFloatingText('🩺 Free Heal Pill!', d.q, d.r, '#34d399', 16);
                             updateCardHand();
@@ -569,7 +570,24 @@ async function tickWaveEffects() {
         spawnEventTiles();
     }
 
-    if ((game.wave - 1) % BLITZ_INTERVAL === 0 && game.wave > 1) {
+    // Arena events come faster late in the match and stack with whatever is still on the board
+    updateEventBadge();
+    if (isBlitzWave(game.wave)) {
+        const frenzy = game.wave > BLITZ_EVERY_WAVE_AFTER;
+        const wrap = document.getElementById('canvas-wrapper');
+        const brutal = isBrutalWave(game.wave);
+        if (wrap) { wrap.classList.toggle('frenzy', frenzy && !brutal); wrap.classList.toggle('brutal', brutal); }
+        if (typeof BGM !== 'undefined') BGM.bpm = brutal ? 120 : frenzy ? 112 : game.wave >= 30 ? 100 : 92;
+        if (game.wave === BRUTAL_WAVE) {
+            showBlitzAnnouncement('Brutal arena', 'Every event now covers 50% more tiles, hits twice as hard, and traps last 2 waves longer.');
+            SFX.blitz();
+            await delay(2600);
+        }
+        if (game.wave === BLITZ_EVERY_WAVE_AFTER + 1) {
+            showBlitzAnnouncement('Final frenzy', 'From now on the arena changes every single wave until someone wins.');
+            SFX.blitz();
+            await delay(2400);
+        }
         await triggerArenaBlitz();
     }
 
@@ -868,6 +886,7 @@ async function beginPlayerTurn() {
         d.damageMultiplier = 1;
         d.attackAgainActive = false;
         d.lastAttackedEnemyId = null;
+        d.bonusAttackReady = false;
         d.hasAttackedThisTurn = false;
     });
 
@@ -885,7 +904,8 @@ async function beginPlayerTurn() {
         const roll = Math.random();
         if (roll < chance) {
             const cpuAlive = aliveDice('cpu').filter(cd => !cd.concealed);
-            if (cpuAlive.length > 0) {
+            const pushable = [...cpuAlive, ...aliveDice('player')];
+            if (pushable.length > 0) {
                 SFX.powerUp();
                 game.psychicAura = true;
                 if (canvasWrap) canvasWrap.classList.add('aura-psychic');
@@ -896,7 +916,7 @@ async function beginPlayerTurn() {
 
                 // Fast Auto bot resolves the push itself instead of waiting for clicks
                 if (fastAutoMode) {
-                    const victim = cpuAlive[Math.floor(Math.random() * cpuAlive.length)];
+                    const victim = (cpuAlive.length ? cpuAlive : pushable)[Math.floor(Math.random() * (cpuAlive.length || pushable.length))];
                     handlePsychicEnemySelect(victim.q, victim.r);
                     const empties = allHexes.filter(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r));
                     const tile = empties[Math.floor(Math.random() * empties.length)];
@@ -906,8 +926,8 @@ async function beginPlayerTurn() {
                     return;
                 }
 
-                setMessage(`🔮 PSYCHIC ACTIVE: Choose enemy die to move! (${Math.round(chance * 100)}% Success)`);
-                setButtons(false, false);
+                setMessage('Psychic Push: pick any die, yours or an enemy, then an empty tile. Deselect skips it.');
+                setButtons(false, true);
                 return;
             }
         } else {
@@ -930,7 +950,7 @@ async function beginPlayerTurn() {
 function selectDie(die) {
     clearPreview();
     if (die.frozen > 0) {
-        setMessage(`${archName(die.archetype)} is frozen for ${die.frozen} more turn${die.frozen>1?'s':''}.`);
+        setMessage(`${archName(die.archetype)} is ${die.petrified ? 'turned to stone' : 'frozen'}. It can move again in ${die.frozen} turn${die.frozen > 1 ? 's' : ''}.`);
         return;
     }
     if (die.trapped > 0) {
@@ -965,6 +985,7 @@ function selectDie(die) {
 }
 
 function deselectDie() {
+    if (game.phase === 'PLAYER_PSYCHIC_ENEMY' || game.phase === 'PLAYER_PSYCHIC_TILE') { skipPsychicPush(); return; }
     clearPreview();
     if (game.activeCard) {
         cancelCard();
@@ -1113,6 +1134,11 @@ function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
     const damage = calc.damage;
     const teamTag = die.team === 'cpu' ? '🔴 CPU ' : '';
 
+    // A follow-up attack spends the permission that allowed it (one extra attack per grant)
+    if (die.hasAttackedThisTurn) {
+        if (die.bonusAttackReady) die.bonusAttackReady = false;
+        else if (die.attackAgainActive) die.attackAgainActive = false;
+    }
     die.hasAttackedThisTurn = true;
     SFX.attack();
     addFloatingText(`-${damage}`, tq, tr, '#ff4466', 22);
@@ -1198,6 +1224,7 @@ function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
     if (die.attackAgainActive && die.moveAllowance > 0) {
         die.attackAgainActive = false;
         die.lastAttackedEnemyId = attackedId;
+        die.bonusAttackReady = true;
     } else {
         die.moveAllowance = 0;
     }
@@ -1330,20 +1357,37 @@ function endTurn() {
     matchTimeout(() => handleTurnEndSequence('player'), 600);
 }
 
+// Psychic Push can move any die: an enemy out of position or an ally out of danger
 function handlePsychicEnemySelect(q, r) {
     const die = getDieAt(q, r);
-    if (die && die.team === 'cpu' && die.hp > 0 && !die.concealed) {
+    const valid = die && die.hp > 0 && (die.team === 'player' || !die.concealed);
+    if (valid) {
         game.psychicTargetEnemy = die;
+        game.selectedDie = null;
         game.phase = 'PLAYER_PSYCHIC_TILE';
-        setMessage('🔮 Psychic Push: Click an empty hex to push the enemy die.');
+        setMessage(`Psychic Push: pick an empty tile for ${die.team === 'player' ? 'your' : 'the enemy'} ${archName(die.archetype)}, or tap another die.`);
         return true;
     }
     return false;
 }
 
+function skipPsychicPush() {
+    game.psychicSource = null;
+    game.psychicTargetEnemy = null;
+    game.psychicAura = false;
+    const canvasWrap = document.getElementById('canvas-wrapper');
+    if (canvasWrap) canvasWrap.classList.remove('aura-psychic');
+    game.phase = 'PLAYER_TURN';
+    setMessage('Psychic Push skipped. Pick one of your dice to move.');
+    setButtons(true, false);
+}
+
 async function handlePsychicTileSelect(q, r) {
     const enemy = game.psychicTargetEnemy;
     if (!enemy) return false;
+    // tapping another die switches the push target
+    const other = getDieAt(q, r);
+    if (other && other !== enemy) return handlePsychicEnemySelect(q, r);
 
     if (isValidHex(q, r) && !getDieAt(q, r) && !isBlocked(q, r)) {
         game.phase = 'PLAYER_ANIMATING';
@@ -1414,6 +1458,7 @@ function handleMindControlEnemySelect(q, r) {
         die.hasAttackedThisTurn = false;
         die.lastAttackedEnemyId = null;
         die.attackAgainActive = false;
+        die.bonusAttackReady = false;
         die.damageMultiplier = 1;
 
         SFX.powerUp();

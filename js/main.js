@@ -28,7 +28,13 @@ function onCanvasClick(e) {
     const reachableHere = game.phase === 'PLAYER_TURN' && game.selectedDie && game.reachable && game.reachable.has(key);
     if (touch && !reachableHere && game.phase !== 'PLAYER_ARCHER_TARGET') {
         const tapped = getDieAt(hex.q, hex.r);
+        const crowd = creaturesAt(hex.q, hex.r);
         if (tapped && tapped.team !== 'player' && !tapped.concealed) showTapInfo(tapped, e.clientX, e.clientY);
+        else if (crowd.length) {
+            showCreatureTooltip(crowd, e.clientX, e.clientY);
+            clearTimeout(tipTimer);
+            tipTimer = setTimeout(hideDieTooltip, 2800);
+        }
         else hideDieTooltip();
     }
 
@@ -134,7 +140,9 @@ function onCanvasMouseMove(e) {
             if (game.preview && game.preview.kind !== 'zap') clearPreview();
             // show a skill card for any visible die under the cursor
             const hovered = getDieAt(hex.q, hex.r);
+            const crowd = creaturesAt(hex.q, hex.r);
             if (hovered && (!hovered.concealed || hovered.team === 'player')) showDieTooltip(hovered, e.clientX, e.clientY);
+            else if (crowd.length) showCreatureTooltip(crowd, e.clientX, e.clientY);
             else hideDieTooltip();
         }
         if (game.phase === 'PLAYER_TURN') {

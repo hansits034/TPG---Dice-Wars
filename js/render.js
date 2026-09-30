@@ -1773,6 +1773,108 @@ function applyDayTint(ds) {
     ctx.restore();
 }
 
+
+// ---------- creature crowds: keep summons visible next to dice and show stack counts ----------
+const CREATURE_STYLE = {
+    zombie: { name: 'Zombie', plural: 'Zombies', color: '#8CBF62' },
+    bee:    { name: 'Bee', plural: 'Bees', color: '#F2B84B' },
+    mummy:  { name: 'Mummy', plural: 'Mummies', color: '#E9DCC0' },
+    robot:  { name: 'Killer robot', plural: 'Killer robots', color: '#7EC8F2' },
+};
+
+function creaturesAt(q, r) {
+    const out = [];
+    for (const z of (game.zombies || [])) if (z.q === q && z.r === r) out.push({ unit: z, kind: 'zombie' });
+    for (const b of (game.bees || [])) if (b.q === q && b.r === r) out.push({ unit: b, kind: b.kind || 'bee' });
+    return out;
+}
+
+function drawCreatureUnit(entry, now, dx, dy, s) {
+    const u = entry.unit;
+    const base = creaturePos(u, now);
+    ctx.save();
+    ctx.translate(base.x + dx, base.y + dy);
+    ctx.scale(s, s);
+    ctx.translate(-base.x, -base.y);
+    if (entry.kind === 'zombie') drawZombie(u, now); else drawBee(u, now);
+    ctx.restore();
+}
+
+// Where the figures go on a tile: centred when alone, pushed to the rim when a die stands there
+function crowdSlots(n, besideDie) {
+    const S = HEX_SIZE;
+    if (besideDie) return [[S * 0.62, S * 0.32, 0.6], [-S * 0.62, S * 0.32, 0.6], [0, S * 0.62, 0.55]].slice(0, n);
+    if (n === 1) return [[0, 0, 1]];
+    if (n === 2) return [[-S * 0.3, -S * 0.02, 0.8], [S * 0.3, S * 0.08, 0.8]];
+    return [[0, -S * 0.2, 0.68], [-S * 0.34, S * 0.14, 0.68], [S * 0.34, S * 0.16, 0.68]];
+}
+
+function drawCrowdBadges(x, y, groups, besideDie) {
+    const S = HEX_SIZE;
+    const h = 16 * DPR;
+    ctx.font = `${Math.round(11 * DPR)}px 'Lilita One', sans-serif`;
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const chips = groups.filter(g => g.count > 1 || besideDie);
+    if (!chips.length) return;
+    const widths = chips.map(g => Math.ceil(ctx.measureText(`x${g.count}`).width) + 20 * DPR);
+    const total = widths.reduce((a, b) => a + b, 0) + (chips.length - 1) * 3 * DPR;
+    let cx = x + S * 0.85 - total, cy = besideDie ? y + S * 0.72 : y - S * 0.95;
+    chips.forEach((g, i) => {
+        const w = widths[i];
+        ctx.fillStyle = CLAY.ink;
+        ctx.beginPath(); ctx.roundRect(cx, cy, w, h, h / 2); ctx.fill();
+        ctx.fillStyle = g.color;
+        ctx.beginPath(); ctx.arc(cx + 8 * DPR, cy + h / 2, 4.5 * DPR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#FFF9F0';
+        ctx.fillText(`x${g.count}`, cx + 15 * DPR, cy + h / 2 + DPR);
+        cx += w + 3 * DPR;
+    });
+}
+
+function queueCreatureCrowds(standing, now) {
+    const tiles = new Map();
+    const add = (unit, kind) => {
+        const k = hKey(unit.q, unit.r);
+        if (!tiles.has(k)) tiles.set(k, { q: unit.q, r: unit.r, list: [] });
+        tiles.get(k).list.push({ unit, kind });
+    };
+    for (const z of (game.zombies || [])) add(z, 'zombie');
+    for (const b of (game.bees || [])) add(b, b.kind || 'bee');
+
+    for (const t of tiles.values()) {
+        const p = hexScreen(t.q, t.r);
+        const occupant = getDieAt(t.q, t.r);
+        const besideDie = !!(occupant && occupant.hp > 0);
+        const groups = [];
+        for (const e of t.list) {
+            let g = groups.find(x => x.kind === e.kind && (e.kind !== 'zombie' || x.team === e.unit.team));
+            if (!g) groups.push(g = { kind: e.kind, team: e.unit.team, count: 0,
+                color: e.kind === 'zombie' ? (e.unit.team === 'player' ? CLAY.player : CLAY.cpu) : CREATURE_STYLE[e.kind].color });
+            g.count++;
+        }
+        const shown = t.list.slice(0, 3);
+        const slots = crowdSlots(shown.length, besideDie);
+        standing.push({
+            // beside a die the figures are drawn after it so they are never hidden
+            y: p.y + (besideDie ? 0.5 : 0.1),
+            draw: () => {
+                // ground ring so a tile with creatures stands out even when crowded
+                const ring = t.list.some(e => e.unit.brutal) ? '#A3313D' : groups[0].color;
+                ctx.save();
+                ctx.strokeStyle = ring; ctx.lineWidth = 3 * DPR;
+                if (ctx.setLineDash) ctx.setLineDash([6 * DPR, 5 * DPR]);
+                ctx.lineDashOffset = -now / 60;
+                ctx.beginPath(); ctx.ellipse(p.x, p.y + HEX_SIZE * 0.25, HEX_SIZE * 0.78, HEX_SIZE * 0.34, 0, 0, Math.PI * 2); ctx.stroke();
+                ctx.restore();
+                // back to front
+                shown.map((e, i) => ({ e, slot: slots[i] })).sort((a, b) => a.slot[1] - b.slot[1])
+                    .forEach(({ e, slot }) => drawCreatureUnit(e, now, slot[0], slot[1], slot[2]));
+                drawCrowdBadges(p.x, p.y, groups, besideDie);
+            },
+        });
+    }
+}
+
 // ---------- main render loop ----------
 function render() {
     if (!ctx || !canvas) return;
@@ -1831,6 +1933,18 @@ function render() {
         }
     }
 
+    // brutal hazards get a skull marker so they stand out from older, milder ones
+    for (const t of tiles) {
+        const item = (game.voidTiles && game.voidTiles.get(t.key)) || (game.burningTiles && game.burningTiles.get(t.key)) || (game.vineTraps && game.vineTraps.get(t.key));
+        if (!item || !item.brutal) continue;
+        const bx = t.x + HEX_SIZE * 0.52, by = t.y - HEX_SIZE * 0.5, br = 8 * DPR;
+        ctx.fillStyle = CLAY.ink;
+        ctx.beginPath(); ctx.arc(bx, by + 1.5 * DPR, br, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#A3313D';
+        ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+        drawIcon(ctx, 'necromancer', bx, by, br * 1.3, '#FFF9F0', 2.6);
+    }
+
     // movement path of the action being previewed
     if (game.preview && !['PLAYER_TURN', 'PLAYER_ARCHER_TARGET'].includes(game.phase)) clearPreview();
     drawPreviewPath(now);
@@ -1841,12 +1955,7 @@ function render() {
         if (game.blocks && game.blocks.has(t.key)) standing.push({ y: t.y, draw: () => drawWall(t.x, t.y, game.blocks.get(t.key), now) });
         if (game.eventTiles && game.eventTiles.has(t.key)) standing.push({ y: t.y, draw: () => drawEventCrystal(t.x, t.y, now, t.q + t.r * 2, game.eventTiles.get(t.key)) });
     }
-    for (const bee of (game.bees || [])) {
-        standing.push({ y: hexScreen(bee.q, bee.r).y + 0.3, draw: () => drawBee(bee, now) });
-    }
-    for (const z of (game.zombies || [])) {
-        standing.push({ y: hexScreen(z.q, z.r).y + 0.05, draw: () => drawZombie(z, now) });
-    }
+    queueCreatureCrowds(standing, now);
     for (const die of allDice()) {
         if (die.hp <= 0) continue;
         if (animatingDie && animatingDie.id === die.id) continue;

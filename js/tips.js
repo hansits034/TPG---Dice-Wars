@@ -9,7 +9,7 @@ const TIPS = {
     skills:    { title: 'Active skills', text: 'Some roles have skills in the action bar, like Zap or Long shot. Point at them to preview what they will hit.' },
     enemyInfo: { title: 'Know your enemy', text: 'Point at (or tap) any die to see its skills and their levels.' },
     cards:     { title: 'You drew a card', text: 'Cards sit in your hand. Select one, then pick its target on the board.' },
-    event:     { title: 'Arena event', text: 'Every 5 waves the arena changes. Watch the board for new hazards or creatures.' },
+    event:     { title: 'Arena event', text: 'The arena changes on set waves, faster as the match goes on. The chip at the top counts down to the next one, and effects stack.' },
     hazard:    { title: 'Hazard tiles', text: 'Dark tiles with a bright outline hurt, slow or root any die that steps on them.' },
     bleed:     { title: 'Bleeding', text: 'A bleeding die loses HP for every tile it moves and cannot heal until it wears off.' },
     upgrade:   { title: 'Level up', text: 'Every 4 waves you pick one skill upgrade. The bars on each die show its skill levels.' },

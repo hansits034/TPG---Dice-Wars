@@ -193,6 +193,7 @@ async function beginCpuTurn() {
         d.damageMultiplier = 1;
         d.attackAgainActive = false;
         d.lastAttackedEnemyId = null;
+        d.bonusAttackReady = false;
         d.hasAttackedThisTurn = false;
     });
 
@@ -222,8 +223,21 @@ async function beginCpuTurn() {
         const chance = psychicLvl === 1 ? 0.40 : psychicLvl === 2 ? 0.65 : 0.90;
         const pAlive = aliveDice('player').filter(pd => !pd.concealed);
         if (pAlive.length > 0 && Math.random() < chance) {
-            const victim = pAlive[Math.floor(Math.random() * pAlive.length)];
-            const emptyHex = findNearestEmptyHex(victim.q, victim.r);
+            const threatened = alive.filter(d => d.hp > 0 && d.hp <= (d.maxHp || MAX_HP) * 0.35 &&
+                pAlive.some(p => hexDist(p.q, p.r, d.q, d.r) <= 1));
+            let victim, emptyHex;
+            if (threatened.length) {
+                // pull its own weak die to the empty tile furthest from the player's dice
+                victim = threatened[0];
+                const spots = allHexes.filter(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r));
+                emptyHex = spots.reduce((best, h) => {
+                    const dist = Math.min(...pAlive.map(p => hexDist(p.q, p.r, h.q, h.r)));
+                    return !best || dist > best.dist ? { q: h.q, r: h.r, dist } : best;
+                }, null) || findNearestEmptyHex(victim.q, victim.r);
+            } else {
+                victim = pAlive[Math.floor(Math.random() * pAlive.length)];
+                emptyHex = findNearestEmptyHex(victim.q, victim.r);
+            }
             const oldQ = victim.q;
             const oldR = victim.r;
             const oldP = hexToPixel(oldQ, oldR);

@@ -204,6 +204,24 @@ function updateMoves() {
 function updateWaveBadge() {
     const el = document.getElementById('wave-badge');
     if (el) el.textContent = `Wave ${game.wave}`;
+    updateEventBadge();
+}
+
+// Countdown to the next arena event
+function updateEventBadge() {
+    const el = document.getElementById('event-badge');
+    if (!el || !game.wave) return;
+    const frenzy = game.wave >= BLITZ_EVERY_WAVE_AFTER;
+    const next = nextBlitzWave(game.wave);
+    const inWaves = next - game.wave;
+    const brutal = isBrutalWave(game.wave);
+    el.classList.toggle('frenzy', frenzy && !brutal);
+    el.classList.toggle('brutal', brutal);
+    el.classList.toggle('soon', inWaves === 1 && !frenzy);
+    const brutalIn = BRUTAL_WAVE - game.wave;
+    const label = brutal ? 'Brutal every wave' : frenzy ? (brutalIn <= 3 ? `Brutal in ${brutalIn}` : 'Event every wave') : inWaves === 1 ? 'Event next wave' : `Event in ${inWaves}`;
+    el.innerHTML = `${iconSVG(brutal ? 'necromancer' : 'star')}<span>${label}</span>`;
+    el.title = frenzy ? 'Final frenzy: an arena event every wave' : `Next arena event on wave ${next}`;
 }
 
 function setMessage(msg) {
@@ -371,7 +389,7 @@ function showBlitzAnnouncement(title, desc) {
     el.innerHTML = `
         <span class="blitz-badge">${iconSVG(icon)}</span>
         <div>
-            <div class="blitz-kicker">Arena event, wave ${game.wave}</div>
+            <div class="blitz-kicker">${isBrutalWave(game.wave) ? 'Brutal arena' : game.wave > BLITZ_EVERY_WAVE_AFTER ? 'Final frenzy' : game.wave >= 30 ? 'Showdown' : 'Arena event'}, wave ${game.wave}</div>
             <div class="blitz-title">${stripEmoji(title)}</div>
             <div class="blitz-desc">${stripEmoji(desc)}</div>
         </div>
@@ -519,7 +537,7 @@ function openHelpModal() {
             <ul>
                 <li><strong>Every 3 waves</strong>, glowing crystals appear. Step on one to draw a card (hand limit 3, or 4 with a Defender, Samurai or Doctor).</li>
                 <li><strong>Every 4 waves</strong>, pick one skill upgrade from three choices.</li>
-                <li><strong>Every 5 waves</strong>, a random arena event shakes things up.</li>
+                <li><strong>Arena events</strong> hit on waves 5, 10, 14, 18, 21, 24, 27, 30, then every 2 waves, and every single wave from wave 37. Their effects stack. From wave 40 they turn <strong>brutal</strong>: 50% more tiles, double damage, traps last 2 waves longer.</li>
             </ul>
 
             <h3>Cards</h3>
@@ -535,7 +553,7 @@ function openHelpModal() {
                 <li><strong>Upheaval.</strong> Tornado throws every die, an alien saucer teleports a few, or an earthquake slides the whole arena one tile.</li>
                 <li><strong>Blocked ground.</strong> 5 to 8 tiles become a void, a mountain or an acid pool for 3 waves.</li>
                 <li><strong>Hazard tiles.</strong> Fire (3 damage), spikes (4 damage) or a biohazard leak (2 damage and no healing).</li>
-                <li><strong>Snares.</strong> Vines root, Medusa's gaze petrifies, snowstorm ice ends your move and slows you.</li>
+                <li><strong>Snares.</strong> Vines root. Medusa's gaze petrifies and snowstorm ice freezes a die solid for 2 rounds.</li>
                 <li><strong>Invaders.</strong> Bees sting and slow, mummies hit hard and curse healing, robots hunt the weakest die.</li>
                 <li><strong>Magician.</strong> Both sides draw 2 cards.</li>
             </ul>
@@ -833,6 +851,54 @@ function showDieTooltip(die, clientX, clientY) {
     if (x < 0) x = Math.max(0, (rect.width - w) / 2);
     if (y + h > rect.height) y = Math.max(0, rect.height - h - 8);
     tip.style.transform = `translate(${Math.max(0, x)}px, ${y}px)`;
+    tip.classList.add('show');
+}
+
+// Info card for creatures standing on a tile
+function showCreatureTooltip(list, clientX, clientY) {
+    const board = document.querySelector('.board');
+    if (!board || !list.length) return;
+    let tip = document.getElementById('die-tooltip');
+    if (!tip) { tip = document.createElement('div'); tip.id = 'die-tooltip'; board.appendChild(tip); }
+    const groups = [];
+    for (const e of list) {
+        const owner = e.kind === 'zombie' ? allDice().find(d => d.id === e.unit.ownerId) : null;
+        const key = e.kind + (owner ? owner.id : e.unit.team || '');
+        let g = groups.find(x => x.key === key);
+        if (!g) groups.push(g = { key, kind: e.kind, owner, team: e.unit.team, count: 0, waves: 0, dmg: 0 });
+        g.count++;
+        g.waves = Math.max(g.waves, e.unit.wavesLeft || 0);
+        g.dmg = e.kind === 'zombie' ? e.unit.damage : brutalDamage(SWARM_KINDS[e.kind].dmg, e.unit.brutal);
+        g.brutal = g.brutal || !!e.unit.brutal;
+    }
+    const rows = groups.map(g => {
+        const st = CREATURE_STYLE[g.kind];
+        const who = g.kind === 'zombie'
+            ? `${g.team === 'player' ? 'Your' : 'Enemy'} ${g.owner ? archName(g.owner.archetype) : 'Necromancer'}'s`
+            : (g.brutal ? 'Brutal' : 'Wild');
+        const extra = g.kind === 'bee' ? ', -1 move' : g.kind === 'mummy' ? ', stops healing' : g.kind === 'robot' ? ', hunts the weakest' : '';
+        return `<div class="crowd-row"><span class="crowd-dot" style="background:${st.color}"></span>
+            <div><b>${g.count} ${g.count > 1 ? st.plural : st.name}</b><small>${who}, ${g.dmg} damage${extra}. ${g.waves} ${g.waves === 1 ? 'wave' : 'waves'} left</small></div></div>`;
+    }).join('');
+    tip.dataset.dieId = 'crowd';
+    tip.dataset.hp = String(list.length) + Math.random();
+    tip.className = 'crowd';
+    tip.innerHTML = `<div class="tip-name">On this tile</div>${rows}`;
+    const rect = board.getBoundingClientRect();
+    const docked = rect.width < 560;
+    tip.classList.toggle('docked', docked);
+    if (docked) {
+        const inTopHalf = clientY - rect.top < rect.height / 2;
+        tip.classList.toggle('dock-bottom', inTopHalf);
+        tip.classList.toggle('dock-top', !inTopHalf);
+        tip.style.transform = '';
+    } else {
+        const w = tip.offsetWidth || 240, h = tip.offsetHeight || 100;
+        let x = clientX - rect.left + 18, y = clientY - rect.top + 18;
+        if (x + w > rect.width) x = clientX - rect.left - w - 18;
+        if (y + h > rect.height) y = Math.max(0, rect.height - h - 8);
+        tip.style.transform = `translate(${Math.max(0, x)}px, ${y}px)`;
+    }
     tip.classList.add('show');
 }
 

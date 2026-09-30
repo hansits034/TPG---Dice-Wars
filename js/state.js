@@ -25,6 +25,7 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false, isClone
         moveDebuff: 0,
         damageMultiplier: 1,
         attackAgainActive: false,
+        bonusAttackReady: false,
         cloneActive: false,
         isCloneDie: isClone,
         halfDamage: 0,
@@ -215,6 +216,17 @@ function updateRageBonus(die) {
 function getToughnessReduction(die) {
     const lvl = getSkillLevel(die, 'toughness');
     return lvl === 1 ? 3 : lvl === 2 ? 5 : lvl === 3 ? 7 : 0;
+}
+
+// Credit healing to the die that caused it (stats + game over summary)
+function creditHeal(healer, amount) {
+    if (!healer || amount <= 0) return;
+    healer.totalHealDone = (healer.totalHealDone || 0) + amount;
+    if (healer.team === 'player' && game.stats) {
+        game.stats.healDone[healer.id] = (game.stats.healDone[healer.id] || 0) + amount;
+        game.stats.healDone.total += amount;
+        if (typeof updateStatsDisplay === 'function') updateStatsDisplay();
+    }
 }
 
 // Credit damage (already applied to the target) to the attacking die and player stats

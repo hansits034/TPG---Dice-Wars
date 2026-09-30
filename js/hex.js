@@ -90,6 +90,11 @@ function findReachable(die, maxMoves) {
             if (isEnemy && die.lastAttackedEnemyId && enemy.id === die.lastAttackedEnemyId) {
                 isEnemy = false; // Cannot attack same enemy die in same turn!
             }
+            // A die that already attacked may keep moving (e.g. Sprint) but only attacks again
+            // with Attack Again (card) or Quick Destruct (Ninja)
+            if (isEnemy && die.hasAttackedThisTurn && !die.bonusAttackReady && !die.attackAgainActive) {
+                isEnemy = false;
+            }
             const nd = cur.dist + 1;
             if (nd > moves) continue;
 

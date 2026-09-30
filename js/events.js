@@ -158,8 +158,8 @@ const HAZARD_KINDS = {
 // Snare tiles (stored in game.vineTraps)
 const SNARE_KINDS = {
     vines:  { text: 'Rooted!', color: '#9BE07A' },
-    medusa: { text: 'Petrified!', color: '#C9C4DA' },
-    snow:   { text: 'Chilled!', color: '#BFE6FF' },
+    medusa: { text: 'Petrified for 2 rounds!', color: '#C9C4DA' },
+    snow:   { text: 'Frozen solid for 2 rounds!', color: '#BFE6FF' },
 };
 // Roaming creatures (stored in game.bees)
 const SWARM_KINDS = {
@@ -171,7 +171,7 @@ const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
 
 function applySwarmHit(unit, die) {
     const k = SWARM_KINDS[unit.kind || 'bee'];
-    applyIndirectDamage(die, k.dmg, k.label, k.color);
+    applyIndirectDamage(die, brutalDamage(k.dmg, unit.brutal), unit.brutal ? `Brutal ${k.label}` : k.label, k.color);
     if ((unit.kind || 'bee') === 'bee') die.moveDebuff = Math.max(die.moveDebuff, 1);
     if (unit.kind === 'mummy') { die.antiHealTurns = Math.max(die.antiHealTurns, 2); addFloatingText('Cursed: no healing', die.q, die.r, '#E9DCC0', 14); }
     if (unit.kind === 'robot') { const p = dieFxPos(die); fxRing(p.x, p.y + HEX_SIZE * 0.3, '#7EC8F2', HEX_SIZE * 1.2, 400, 4); }
@@ -228,6 +228,9 @@ async function triggerArenaBlitz() {
     const blitzTypes = ['tornado', 'void', 'burning', 'vine', 'bees', 'magician'];
     const chosen = blitzTypes[Math.floor(Math.random() * blitzTypes.length)];
     const now = () => performance.now();
+    // brutal waves: more tiles, double damage, longer traps (see config.js)
+    const brutal = isBrutalWave(game.wave);
+    const range = (a, b) => `${brutalTiles(a, brutal)} to ${brutalTiles(b, brutal)}`;
 
     switch (chosen) {
         case 'tornado': {
@@ -259,7 +262,7 @@ async function triggerArenaBlitz() {
             } else if (variant === 'alien') {
                 showBlitzAnnouncement('Alien visit', 'A saucer beams up a few dice and drops them somewhere else.');
                 await delay(600);
-                const victims = allDice().filter(d => d.hp > 0).sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 3));
+                const victims = allDice().filter(d => d.hp > 0).sort(() => Math.random() - 0.5).slice(0, brutalTiles(2 + Math.floor(Math.random() * 3), brutal));
                 addBoardFx('ufo', 900 + victims.length * 650 + 700);
                 SFX.alien();
                 await delay(700);
@@ -309,18 +312,18 @@ async function triggerArenaBlitz() {
         case 'void': {
             const variant = pickOne(['hole', 'mountain', 'acid']);
             const text = {
-                hole: ['Collapse', '5 to 8 tiles fall into the void for 3 waves.'],
-                mountain: ['Rockslide', 'Mountains burst out of 5 to 8 tiles and block them for 3 waves.'],
-                acid: ['Acid flood', 'Acid pools seal off 5 to 8 tiles for 3 waves.'],
+                hole: ['Collapse', `${range(5, 8)} tiles fall into the void for 3 waves.`],
+                mountain: ['Rockslide', `Mountains burst out of ${range(5, 8)} tiles and block them for 3 waves.`],
+                acid: ['Acid flood', `Acid pools seal off ${range(5, 8)} tiles for 3 waves.`],
             }[variant];
             showBlitzAnnouncement(text[0], text[1]);
             await delay(600);
             const available = allHexes.filter(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
-            const count = Math.min(Math.floor(Math.random() * 4) + 5, available.length); // 5 to 8
+            const count = Math.min(brutalTiles(Math.floor(Math.random() * 4) + 5, brutal), available.length); // 5 to 8 (+50% when brutal)
             if (variant !== 'acid') shakeBoard(900);
             for (let i = 0; i < count; i++) {
                 const h = available[i];
-                game.voidTiles.set(hKey(h.q, h.r), { wavesLeft: 3, bornAt: now() + i * 110, kind: variant });
+                game.voidTiles.set(hKey(h.q, h.r), { wavesLeft: 3, bornAt: now() + i * 110, kind: variant, brutal });
                 matchTimeout(() => {
                     const p = hexScreen(h.q, h.r);
                     if (variant === 'acid') { spawnParticles(p.x, p.y, '#B6F24A', 12, 2, 700, 3); SFX.bubble(); }
@@ -333,17 +336,17 @@ async function triggerArenaBlitz() {
         case 'burning': {
             const variant = pickOne(['fire', 'spikes', 'bio']);
             const text = {
-                fire: ['Wildfire', '3 to 5 tiles catch fire. Touching them deals 3 damage.'],
-                spikes: ['Spike traps', '3 to 5 tiles sprout spikes. Touching them deals 4 damage.'],
-                bio: ['Biohazard leak', '3 to 5 tiles leak toxin: 2 damage and no healing for 2 turns.'],
+                fire: ['Wildfire', `${range(3, 5)} tiles catch fire. Touching them deals ${brutalDamage(3, brutal)} damage.`],
+                spikes: ['Spike traps', `${range(3, 5)} tiles sprout spikes. Touching them deals ${brutalDamage(4, brutal)} damage.`],
+                bio: ['Biohazard leak', `${range(3, 5)} tiles leak toxin: ${brutalDamage(2, brutal)} damage and no healing for 2 turns.`],
             }[variant];
             showBlitzAnnouncement(text[0], text[1]);
             await delay(600);
             const available = allHexes.filter(h => !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
-            const count = Math.min(Math.floor(Math.random() * 3) + 3, available.length);
+            const count = Math.min(brutalTiles(Math.floor(Math.random() * 3) + 3, brutal), available.length);
             for (let i = 0; i < count; i++) {
                 const h = available[i];
-                game.burningTiles.set(hKey(h.q, h.r), { wavesLeft: 3, bornAt: now() + i * 160, kind: variant });
+                game.burningTiles.set(hKey(h.q, h.r), { wavesLeft: 3, bornAt: now() + i * 160, kind: variant, brutal });
                 matchTimeout(() => {
                     const p = hexScreen(h.q, h.r);
                     spawnParticles(p.x, p.y, HAZARD_KINDS[variant].color, 14, 2.5, 800, 3);
@@ -360,19 +363,19 @@ async function triggerArenaBlitz() {
         case 'vine': {
             const variant = pickOne(['vines', 'medusa', 'snow']);
             const text = {
-                vines: ['Vines', '2 tiles sprout vines that root any die for 2 turns.'],
-                medusa: ["Medusa's gaze", '2 tiles turn to stone. Dice on them are petrified for a turn.'],
-                snow: ['Snowstorm', '3 tiles freeze over. Stepping on them ends your move and slows you.'],
+                vines: ['Vines', `${brutalTiles(2, brutal)} tiles sprout vines that root any die for ${brutalTrap(2, brutal)} turns.`],
+                medusa: ["Medusa's gaze", `${brutalTiles(2, brutal)} tiles turn to stone. Any die on them is petrified for ${brutalTrap(2, brutal)} rounds.`],
+                snow: ['Snowstorm', `${brutalTiles(3, brutal)} tiles freeze over. Any die on them is frozen solid for ${brutalTrap(2, brutal)} rounds.`],
             }[variant];
             showBlitzAnnouncement(text[0], text[1]);
             await delay(600);
             if (variant === 'snow') { addBoardFx('snowfall', 3200); SFX.wind(); }
             if (variant === 'medusa') { addBoardFx('medusa', 1800); SFX.magic(); }
             const available = allHexes.filter(h => !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
-            const count = variant === 'snow' ? 3 : 2;
+            const count = brutalTiles(variant === 'snow' ? 3 : 2, brutal);
             for (let i = 0; i < Math.min(count, available.length); i++) {
                 const h = available[i];
-                game.vineTraps.set(hKey(h.q, h.r), { wavesLeft: 2, bornAt: now() + i * 300, kind: variant });
+                game.vineTraps.set(hKey(h.q, h.r), { wavesLeft: brutalTrap(2, brutal), bornAt: now() + i * 300, kind: variant, brutal });
                 matchTimeout(() => {
                     const p = hexScreen(h.q, h.r);
                     spawnParticles(p.x, p.y, SNARE_KINDS[variant].color, 12, 2, 700, 3);
@@ -387,17 +390,17 @@ async function triggerArenaBlitz() {
         case 'bees': {
             const variant = pickOne(['bee', 'mummy', 'robot']);
             const text = {
-                bee: ['Bee swarm', '5 bees join for 3 waves: 5 damage and -1 move.'],
-                mummy: ['Mummy attack', '3 mummies rise for 3 waves: slow, 7 damage and a healing curse.'],
-                robot: ['Killer robots', '3 robots drop in for 3 waves and hunt the weakest die.'],
+                bee: ['Bee swarm', `${brutalTiles(5, brutal)} bees join for 3 waves: ${brutalDamage(5, brutal)} damage and -1 move.`],
+                mummy: ['Mummy attack', `${brutalTiles(3, brutal)} mummies rise for 3 waves: slow, ${brutalDamage(7, brutal)} damage and a healing curse.`],
+                robot: ['Killer robots', `${brutalTiles(3, brutal)} robots drop in for 3 waves and hunt the weakest die for ${brutalDamage(6, brutal)} damage.`],
             }[variant];
             showBlitzAnnouncement(text[0], text[1]);
             await delay(600);
-            const count = variant === 'bee' ? 5 : 3;
+            const count = brutalTiles(variant === 'bee' ? 5 : 3, brutal);
             const available = allHexes.filter(h => !getDieAt(h.q, h.r) && !isBlocked(h.q, h.r)).sort(() => Math.random() - 0.5);
             if (variant === 'bee') SFX.buzz(); else if (variant === 'robot') SFX.robot(); else SFX.crumble();
             for (let i = 0; i < Math.min(count, available.length); i++) {
-                const unit = { id: Math.random(), q: available[i].q, r: available[i].r, wavesLeft: 3, kind: variant, bornAt: now() + i * 160 };
+                const unit = { id: Math.random(), q: available[i].q, r: available[i].r, wavesLeft: 3, kind: variant, bornAt: now() + i * 160, brutal };
                 if (variant === 'bee') {
                     const a = Math.random() * Math.PI * 2, rad = Math.max(canvas.width, canvas.height) * 0.6;
                     unit.fromX = gridCenterX + Math.cos(a) * rad; unit.fromY = gridCenterY + Math.sin(a) * rad;
@@ -433,6 +436,18 @@ async function triggerArenaBlitz() {
     await delay(300);
 }
 
+// A zombie bite counts as damage dealt by the necromancer that raised it
+function zombieHit(zombie, die) {
+    const owner = allDice().find(d => d.id === zombie.ownerId);
+    const dealt = applyIndirectDamage(die, zombie.damage, 'Zombie', '#10b981');
+    if (owner && dealt > 0) creditDamageDealt(owner, dealt);
+    const who = owner ? `${owner.team === 'cpu' ? 'CPU ' : ''}${archName(owner.archetype)}` : 'A necromancer';
+    addCombatLog(`${who}'s zombie bit ${archName(die.archetype)} for ${dealt} DMG`, '', '#10b981');
+    SFX.attack();
+    updateDiceHP();
+    return dealt;
+}
+
 // Instantaneous tile effect trigger helper
 function triggerTileEffectOnDie(die) {
     if (!die || die.hp <= 0) return;
@@ -442,7 +457,8 @@ function triggerTileEffectOnDie(die) {
         const kind = game.burningTiles.get(k).kind || 'fire';
         const hz = HAZARD_KINDS[kind] || HAZARD_KINDS.fire;
         if (die.team === 'player') showTip('hazard');
-        applyIndirectDamage(die, hz.dmg, hz.label, hz.color);
+        const hzItem = game.burningTiles.get(k);
+        applyIndirectDamage(die, brutalDamage(hz.dmg, hzItem.brutal), hzItem.brutal ? `Brutal ${hz.label}` : hz.label, hz.color);
         if (hz.poison) die.antiHealTurns = Math.max(die.antiHealTurns, hz.poison);
         if (checkWin()) return;
     }
@@ -452,10 +468,14 @@ function triggerTileEffectOnDie(die) {
         const sn = SNARE_KINDS[kind] || SNARE_KINDS.vines;
         if (die.team === 'player') showTip('hazard');
         die.moveAllowance = 0;
-        if (kind === 'medusa') { die.frozen = Math.max(die.frozen, 1); die.petrified = true; SFX.block(); }
-        else if (kind === 'snow') { die.moveDebuff = Math.max(die.moveDebuff, 1); SFX.freeze(); }
-        else { die.trapped = 2; SFX.block(); }
-        addFloatingText(sn.text, die.q, die.r, sn.color, 20);
+        // Frozen ticks down at the start of each of the die's own turns, so 3 keeps it locked
+        // for at least its next 2 turns (2 full rounds), whether it steps on the tile or the tile appears under it
+        const snItem = game.vineTraps.get(k);
+        const lock = brutalTrap(2, snItem.brutal); // rounds the die stays stuck
+        if (kind === 'medusa') { die.frozen = Math.max(die.frozen, lock + 1); die.petrified = true; die.trapped = 0; SFX.block(); }
+        else if (kind === 'snow') { die.frozen = Math.max(die.frozen, lock + 1); die.petrified = false; die.moveDebuff = Math.max(die.moveDebuff, 1); SFX.freeze(); }
+        else { die.trapped = Math.max(die.trapped, lock); SFX.block(); }
+        addFloatingText(kind === 'vines' ? `Rooted for ${lock} turns!` : sn.text.replace('2 rounds', `${lock} rounds`), die.q, die.r, sn.color, 20);
         updateDiceHP();
     }
 
@@ -489,9 +509,7 @@ function triggerTileEffectOnDie(die) {
     if (game.zombies) {
         for (const zombie of game.zombies) {
             if (zombie.q === die.q && zombie.r === die.r && zombie.team !== die.team && die.concealed === 0) {
-                applyIndirectDamage(die, zombie.damage, 'Zombie', '#10b981');
-                SFX.attack();
-                updateDiceHP();
+                zombieHit(zombie, die);
                 if (checkWin()) return;
             }
         }
@@ -552,9 +570,7 @@ async function processZombiesMovement() {
             if (neighbors.length > 0) stepCreature(zombie, neighbors[0].q, neighbors[0].r);
 
             if (zombie.q === targetDie.q && zombie.r === targetDie.r) {
-                applyIndirectDamage(targetDie, zombie.damage, '🧟 Zombie', '#10b981');
-                SFX.attack();
-                updateDiceHP();
+                zombieHit(zombie, targetDie);
                 if (checkWin()) return;
                 break;
             }
