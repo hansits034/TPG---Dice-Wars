@@ -896,6 +896,88 @@ body::before {
 .crowd-row b { display: block; font-size: 0.85rem; }
 .crowd-row small { display: block; font-size: 0.72rem; font-weight: 700; color: var(--ink-soft); line-height: 1.35; }
 
+/* ---------- boss raid, hot-seat, pause ---------- */
+.boss-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 16px; background: #fff; box-shadow: var(--inset); cursor: pointer; }
+.boss-head { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.boss-name { font-family: var(--font-display); font-size: 1.15rem; }
+.boss-phase { font-size: 0.74rem; font-weight: 900; color: var(--violet-lip); }
+.boss-bar { position: relative; height: 16px; border-radius: 10px; background: var(--clay-2); overflow: hidden; box-shadow: inset 0 2px 3px rgba(47,42,69,0.2); }
+.boss-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #5A4787, #8468C4); border-radius: 10px; transition: width 0.4s; box-shadow: inset 0 3px 0 rgba(255,255,255,0.25); }
+.boss-bar b { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(47,42,69,0.35); }
+.boss-hp { font-size: 0.78rem; font-weight: 900; color: var(--ink-soft); text-align: right; }
+.boss-lvl { font-size: 0.72rem; font-weight: 900; color: #fff; background: var(--violet); border-radius: 8px; padding: 1px 7px; vertical-align: middle; }
+.boss-score { display: flex; justify-content: space-between; font-size: 0.8rem; font-weight: 800; color: var(--ink-soft); }
+.boss-score b { color: var(--ink); font-size: 0.95rem; }
+.endless-score { display: flex; flex-direction: column; align-items: center; margin: 6px 0 2px; }
+.endless-score b { font-family: var(--font-display); font-size: 3rem; line-height: 1; color: var(--violet-lip); }
+.endless-score span { font-size: 0.82rem; font-weight: 800; color: var(--ink-soft); }
+.settings-options-grid.two { grid-template-columns: repeat(2, 1fr); }
+.boss-brief { text-align: left; margin: 14px auto 0; max-width: 40ch; display: flex; flex-direction: column; gap: 6px; padding-left: 18px; font-size: 0.88rem; color: var(--ink-soft); }
+.p2-squad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.p2-pick { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 4px; padding: 8px 6px; border-radius: 16px; background: var(--cpu-soft); }
+.p2-pick .carousel-arrow-btn { width: 34px; height: 34px; }
+.p2-pick-body { display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: 900; font-size: 0.8rem; text-align: center; }
+body.is-paused #canvas-wrapper { filter: saturate(0.6); }
+/* ---------- puzzles ---------- */
+body.mode-puzzle #wave-badge, body.mode-puzzle #timer-badge, body.mode-puzzle #event-badge,
+body.mode-puzzle #daytime-badge, body.mode-puzzle #auto-test-btn, body.mode-puzzle #cpu-hand-count,
+body.mode-puzzle #cpu-dice-hp .die-dmg-chip { display: none !important; }
+.hud-chip.puzzle { display: inline-flex; gap: 8px; align-items: center; font-weight: 900; }
+.hud-chip.puzzle b { color: var(--violet-lip); }
+.hud-chip.puzzle b.low { color: var(--cpu); }
+.puzzle-tier { font-size: 0.78rem; font-weight: 900; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-soft); }
+.puzzle-tier.hard { color: var(--cpu); }
+.puzzle-tier.mid { color: var(--gold-lip, #B8871F); }
+.puzzle-rules { text-align: left; margin: 12px auto 0; max-width: 44ch; display: flex; flex-direction: column; gap: 6px; padding-left: 18px; font-size: 0.88rem; color: var(--ink-soft); }
+.per-die-moves { display: inline-flex; gap: 6px; margin-left: 10px; vertical-align: middle; }
+.die-moves { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px 2px 3px; border-radius: 10px; background: rgba(255,255,255,0.7); font-size: 0.85rem; }
+.die-moves b { font-weight: 900; }
+.die-moves .ico { width: 13px; height: 13px; }
+.die-moves.done { opacity: 0.45; }
+.die-atk { display: inline-flex; align-items: center; gap: 1px; margin-left: 3px; color: var(--cpu); font-weight: 900; font-size: 0.8rem; }
+.die-atk .ico { width: 13px; height: 13px; }
+@media (max-width: 720px) { .per-die-moves { margin-left: 6px; gap: 4px; } .die-moves { padding: 1px 5px 1px 2px; } }
+.strike-note { font-size: 0.8em; font-weight: 900; color: var(--violet-lip); }
+.puzzle-cards-help { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 0; text-align: left; }
+.pch-row { display: grid; grid-template-columns: 38px 1fr; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 14px; background: #fff; box-shadow: 0 3px 0 rgba(47,42,69,0.1); }
+.pch-icon { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--violet); color: #fff; }
+.pch-icon .ico { width: 20px; height: 20px; }
+.pch-icon.role { background: var(--player); }
+.pch-icon.hazard { background: #9A6B10; }
+.pch-name { font-weight: 900; font-size: 0.92rem; }
+.pch-desc { font-size: 0.84rem; color: var(--ink-soft); line-height: 1.35; }
+.pch-new { display: inline-block; font-size: 0.66rem; font-weight: 900; letter-spacing: 0.05em; text-transform: uppercase; color: #fff; background: var(--cpu); border-radius: 6px; padding: 1px 6px; vertical-align: middle; }
+.tutorial-steps { text-align: left; margin: 12px auto 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem; color: var(--ink-soft); line-height: 1.4; }
+.tutorial-steps b { color: var(--ink); }
+.puzzle-hint-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 10px; padding: 4px 10px;
+    background: var(--gold); color: var(--ink); font: inherit; font-weight: 900; font-size: 0.8rem; cursor: pointer; box-shadow: 0 2px 0 #B8871F; }
+.puzzle-hint-btn .ico { width: 15px; height: 15px; }
+#puzzle-hint-banner { position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+    width: max-content; max-width: min(560px, calc(100% - 24px)); display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 10px 44px 10px 14px; border-radius: 16px; background: #FFF8E4; color: var(--ink); font-size: 0.92rem; line-height: 1.35;
+    box-shadow: 0 5px 0 #E3C77E, 0 10px 24px rgba(47,42,69,0.18); transition: opacity 0.25s, transform 0.25s; z-index: 5; }
+#puzzle-hint-banner.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+#puzzle-hint-banner .hint-step { font-weight: 900; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.04em; color: #9A6B10; background: #F7E2A8; border-radius: 8px; padding: 2px 8px; }
+#puzzle-hint-banner .hint-close { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); border: 0; background: transparent; cursor: pointer; padding: 4px; color: var(--ink-soft); }
+#puzzle-hint-banner .hint-close .ico { width: 16px; height: 16px; }
+.clay-btn.small { padding: 5px 12px; font-size: 0.8rem; }
+.puzzle-hint { margin-top: 10px; padding: 10px 12px; border-radius: 14px; background: var(--clay-2); font-size: 0.88rem; text-align: left; }
+.puzzle-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.puzzle-card { display: grid; grid-template-columns: 38px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; text-align: left;
+    padding: 10px 12px; border: 0; border-radius: 16px; background: #fff; box-shadow: 0 4px 0 rgba(47,42,69,0.12); cursor: pointer; font: inherit; color: var(--ink); }
+.puzzle-card:hover:not([disabled]) { transform: translateY(-1px); }
+.puzzle-card[disabled] { opacity: 0.55; cursor: not-allowed; }
+.puzzle-num { grid-row: span 2; width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; font-family: var(--font-display); font-size: 1.1rem; background: var(--clay-2); }
+.puzzle-num .ico { width: 20px; height: 20px; }
+.puzzle-card.done .puzzle-num { background: var(--player); color: #fff; }
+.puzzle-name { font-weight: 900; font-size: 0.92rem; }
+.puzzle-meta { font-size: 0.74rem; font-weight: 700; color: var(--ink-soft); }
+.puzzle-select .overlay-box, .puzzle-select { max-height: 90vh; overflow-y: auto; }
+
+/* hot-seat handoff: hide the next player's hand and board from the one passing the device */
+#overlay:has(.handoff-box) { background: rgba(47, 42, 69, 0.92); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+@media (max-width: 720px) { .p2-squad { grid-template-columns: 1fr; } }
+
 /* ---------- responsive ---------- */
 /* short desktop screens: compact hand cards, description on hover */
 @media (max-height: 840px) and (min-width: 1181px) {

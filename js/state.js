@@ -11,7 +11,7 @@ let turnTimerInterval = null;
 let stopwatchInterval = null;
 
 function createDie(id, q, r, team, archetypeId='dracula', isSplit=false, isClone=false) {
-    const arch = ARCHETYPES.find(a => a.id === archetypeId) || ARCHETYPES[0];
+    const arch = ARCHETYPES.find(a => a.id === archetypeId) || (archetypeId === 'boss' ? BOSS_ARCHETYPE : ARCHETYPES[0]);
     const skills = isClone ? [] : JSON.parse(JSON.stringify(arch.skills));
     const maxHp = gameSettings ? gameSettings.startHp : MAX_HP;
 
@@ -111,6 +111,7 @@ function resetGame() {
             healDone: { p1: 0, p2: 0, p3: 0, cards: 0, total: 0 }
         }
     };
+    if (typeof applyModeSetup === 'function') applyModeSetup();
     particles = [];
     floatingTexts = [];
     if (typeof stopTurnTimer === 'function') stopTurnTimer();
@@ -122,7 +123,27 @@ function aliveDice(team) { return (team === 'player' ? game.playerDice : game.cp
 function getDieAt(q, r, includeConcealed=true) {
     return allDice().find(d => d.hp > 0 && d.q === q && d.r === r && (includeConcealed || !d.concealed));
 }
-function totalMovesLeft(team) { return aliveDice(team).reduce((s, d) => s + d.moveAllowance, 0); }
+function totalMovesLeft(team) {
+    if (team === 'player' && typeof puzzleOutOfActions === 'function' && puzzleOutOfActions()) return 0;
+    return aliveDice(team).reduce((s, d) => s + d.moveAllowance, 0);
+}
+// Attacks a die may still make this turn (its own + Attack Again / Quick Destruct)
+function attacksLeft(d) {
+    return (d.hasAttackedThisTurn ? 0 : 1) + (d.bonusAttackReady | 0) + (d.attackAgainActive | 0);
+}
+function attackAvailable(d) { return attacksLeft(d) > 0; }
+// Puzzles: after attacking, a die keeps its move count but is locked (no walking, no attacking) until Attack Again
+function puzzleLocked(d) {
+    return typeof isPuzzle === 'function' && isPuzzle() && d && d.hasAttackedThisTurn && !attackAvailable(d);
+}
+// Can this die still do anything this turn? (every move and every attack costs moves)
+function dieCanAct(d) {
+    if (typeof puzzleDieHasAbility === 'function' && puzzleDieHasAbility(d) && d.frozen <= 0 && d.trapped <= 0) return true;
+    if (!d || d.hp <= 0 || d.frozen > 0 || d.trapped > 0 || d.moveAllowance <= 0 || puzzleLocked(d)) return false;
+    return !(d.team === 'player' && typeof puzzleOutOfActions === 'function' && puzzleOutOfActions());
+}
+function teamCanAct(team) { return aliveDice(team).some(dieCanAct);
+}
 
 function getSkillLevel(die, skillId) {
     if (!die || !die.skills) return 0;
@@ -148,6 +169,8 @@ function getDieEffectiveDamage(die) {
         const bonus = standstillLvl === 1 ? 2 : standstillLvl === 2 ? 4 : 7;
         dmg += bonus;
     }
+    // Dice Titan: Titan Might
+    if (die.archetype === 'boss') dmg += (die.hp / die.maxHp <= 0.33 ? 6 : 3) + ((game.bossLevel || 1) - 1);
     return dmg;
 }
 
@@ -166,6 +189,7 @@ function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444'
 
     if (dmgToApply > 0) {
         die.lastHitTeam = sourceTeam;
+        if (typeof recordBossDamage === 'function') recordBossDamage(die, Math.min(die.hp, dmgToApply));
         die.hp -= dmgToApply;
         die.hitAt = performance.now();
         if (typeof dieFxPos === 'function') {
@@ -263,6 +287,7 @@ function creditDamageDealt(attacker, amount) {
 function dealDirectDamage(target, amount, attacker=null, label=null, color='#ef4444') {
     if (!target || target.hp <= 0 || amount <= 0) return 0;
     target.lastHitTeam = attacker ? attacker.team : null;
+    if (typeof recordBossDamage === 'function') recordBossDamage(target, Math.min(target.hp, amount));
     target.hp -= amount;
     if (target.hp < 0) target.hp = 0;
     target.hitAt = performance.now();
@@ -296,7 +321,7 @@ function addCombatLog(text, icon='⚔️', color='#e2e8f0') {
     }
     const entry = {
         wave: game.wave || 1,
-        text: stripEmoji(text),
+        text: stripEmoji(typeof localizeText === 'function' ? localizeText(text) : text),
         icon,
         color,
         time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })

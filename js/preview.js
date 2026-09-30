@@ -46,7 +46,7 @@ function buildAttackPreview(die, target, dist) {
     const quickLvl = getSkillLevel(die, 'quickDestruct');
     const movesAfter = Math.max(0, die.moveAllowance - dist);
     if (quickLvl > 0 && movesAfter > 0) notes.push({ tone: 'good', icon: 'ninja', text: `${[0, 25, 35, 50][quickLvl]}% chance to attack again` });
-    if (die.attackAgainActive && movesAfter > 0) notes.push({ tone: 'good', icon: 'bolt', text: 'Attack Again: you can strike another enemy after this' });
+    if (die.attackAgainActive) notes.push({ tone: 'good', icon: 'bolt', text: `Attack Again: ${die.attackAgainActive > 1 ? die.attackAgainActive + ' more attacks' : 'one more attack'} after this, ${Math.max(0, movesAfter)} ${movesAfter === 1 ? 'move' : 'moves'} left` });
 
     const parts = [{ label: `Face ${c.face}` }];
     if (c.mult > 1) parts.push({ label: `x${c.mult} card`, tone: 'good' });

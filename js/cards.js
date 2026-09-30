@@ -60,6 +60,7 @@ function onCardClick(idx) {
 function applyCard(card, team, handIdx) {
     const hand = team === 'player' ? game.playerHand : game.cpuHand;
     hand.splice(handIdx, 1);
+    if (team === 'player' && typeof recordPuzzleCard === 'function') recordPuzzleCard(card, []);
 
     switch (card.id) {
         case 'dmg2': {
@@ -82,7 +83,14 @@ function applyCard(card, team, handIdx) {
         }
         case 'atkAgain': {
             const dice = aliveDice(team);
-            dice.forEach(d => d.attackAgainActive = true);
+            dice.forEach(d => {
+                if (d.hasAttackedThisTurn) {
+                    // already struck: bank the extra attack and give back any moves the attack put aside
+                    d.bonusAttackReady = (d.bonusAttackReady | 0) + 1;
+                    if (d.moveAllowance <= 0 && d.spareMoves > 0) d.moveAllowance = d.spareMoves;
+                    d.spareMoves = 0;
+                } else d.attackAgainActive = (d.attackAgainActive | 0) + 1;
+            });
             addFloatingText('⚡ Attack Again!', dice[0].q, dice[0].r, '#fbbf24', 16);
             SFX.powerUp();
             break;
@@ -100,6 +108,7 @@ function applyCard(card, team, handIdx) {
 function applyCardWithTarget(card, team, handIdx, targets) {
     const hand = team === 'player' ? game.playerHand : game.cpuHand;
     hand.splice(handIdx, 1);
+    if (team === 'player' && typeof recordPuzzleCard === 'function') recordPuzzleCard(card, targets);
 
     switch (card.id) {
         case 'heal': {
@@ -140,6 +149,7 @@ function applyCardWithTarget(card, team, handIdx, targets) {
         case 'sprint': {
             const die = targets[0];
             die.moveAllowance = (die.moveAllowance || 0) + 3;
+            die.strikeOnly = false;
             addFloatingText('👟 +3 Moves!', die.q, die.r, '#38bdf8', 18);
             if (team === 'player' && die.hasAttackedThisTurn && !die.bonusAttackReady && !die.attackAgainActive) {
                 setMessage(`${archName(die.archetype)} already attacked this turn, so Sprint only lets it move. Use Attack Again to strike again.`);
@@ -488,6 +498,13 @@ function handleDashDirSelect(q, r) {
 }
 
 function cancelCard() {
+    if (game.phase === 'PLAYER_RAISE_TARGET') {
+        game.raiseSource = null;
+        game.phase = 'PLAYER_TURN';
+        setMessage('Raise cancelled.');
+        setButtons(true, false);
+        return;
+    }
     if (game.activeCard || game.phase === 'PLAYER_CARD_TARGET' || game.phase === 'PLAYER_CARD_DASH_DIE' || game.phase === 'PLAYER_CARD_DASH_DIR') {
         game.activeCard = null;
         game.cardTargets = [];

@@ -4,6 +4,7 @@
 let fastAutoMode = false;
 
 function toggleFastAutoMode() {
+    if (isHotseat()) return; // both sides are people
     fastAutoMode = !fastAutoMode;
     const btn = document.getElementById('auto-test-btn');
     if (btn) {
@@ -13,6 +14,13 @@ function toggleFastAutoMode() {
     if (fastAutoMode && game.phase === 'PLAYER_TURN' && game.currentTurn === 'player') {
         matchTimeout(playerAutoBotTurn, 200);
     }
+}
+
+function toggleFastAutoModeOff() {
+    if (!fastAutoMode) return;
+    fastAutoMode = false;
+    const btn = document.getElementById('auto-test-btn');
+    if (btn) { btn.classList.remove('active'); btn.innerHTML = `${iconSVG('fast')}<span>Auto play</span>`; }
 }
 
 // Shared card AI for the CPU and the player's Fast Auto bot.
@@ -37,7 +45,7 @@ async function autoUseCards(team, stepDelay) {
             const weak = alive.find(d => lowHp(d, 0.4) && d.antiHealTurns === 0);
             if (weak) { applyCardWithTarget(card, team, i, [weak]); used = true; }
         } else if (card.id === 'dmg2' || card.id === 'dmg3') {
-            const canAttack = alive.some(d => d.frozen === 0 && d.trapped === 0 && d.moveAllowance > 0 &&
+            const canAttack = alive.some(d => d.frozen === 0 && d.trapped === 0 &&
                 [...findReachable(d).reachable.values()].some(v => v.isAttack));
             if (canAttack) { applyCard(card, team, i); used = true; }
         } else if (card.id === 'freeze') {
@@ -126,8 +134,8 @@ async function playerAutoBotTurn() {
 
     await playerAutoUseCards();
 
-    while (totalMovesLeft('player') > 0 && game.phase === 'PLAYER_TURN' && game.currentTurn === 'player') {
-        const movableDice = aliveDice('player').filter(d => d.moveAllowance > 0 && d.frozen === 0 && d.trapped === 0);
+    while (teamCanAct('player') && game.phase === 'PLAYER_TURN' && game.currentTurn === 'player') {
+        const movableDice = aliveDice('player').filter(dieCanAct);
         if (movableDice.length === 0) break;
 
         let moved = false;
@@ -164,6 +172,7 @@ async function playerAutoBotTurn() {
 
 async function beginCpuTurn() {
     if (game.phase === 'GAME_OVER') return;
+    if (isHotseat()) return beginHotseatTurn();
     clearPreview();
     game.phase = 'CPU_TURN';
     game.currentTurn = 'cpu';
@@ -194,11 +203,19 @@ async function beginCpuTurn() {
         d.attackAgainActive = false;
         d.lastAttackedEnemyId = null;
         d.bonusAttackReady = false;
+        d.strikeOnly = false;
+        d.spareMoves = 0;
         d.hasAttackedThisTurn = false;
     });
 
     updateRollDisplay(vals, 'cpu');
     updateDiceHP();
+
+    if (isBossMode()) {
+        await bossAbilities();
+        updateDiceHP();
+        if (checkWin()) return;
+    }
 
     // CPU Mage Zap Skill Execution
     const cpuMage = alive.find(d => (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) && (d.zapStacks || 0) > 0 && canUseActiveSkill(d));
@@ -319,10 +336,10 @@ async function beginCpuTurn() {
 
     const stepDelay = fastAutoMode ? 100 : 400;
 
-    while (totalMovesLeft('cpu') > 0) {
+    while (teamCanAct('cpu')) {
         if (checkWin()) return;
 
-        const movableDice = aliveDice('cpu').filter(d => d.moveAllowance > 0 && d.frozen === 0 && d.trapped === 0);
+        const movableDice = aliveDice('cpu').filter(dieCanAct);
         if (movableDice.length === 0) break;
 
         const attackMoves = [];

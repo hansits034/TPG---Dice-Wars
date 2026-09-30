@@ -149,7 +149,8 @@ function setupCanvas() {
 
     // On narrow screens fit the playable arena and let the scenery ring run off the edges,
     // so tiles stay big enough to tap
-    const R = cssW < 700 ? GRID_RADIUS + 0.62 : DECOR_RADIUS;
+    const R = typeof isPuzzle === 'function' && isPuzzle() ? game.puzzleRadius + (cssW < 700 ? 0.75 : 1.1)
+        : cssW < 700 ? GRID_RADIUS + 0.62 : DECOR_RADIUS;
     HEX_SIZE = calcHexSize(cssW * DPR, cssH * DPR, R);
     const boardW = HEX_SIZE * (SQRT3 * (2 * R + 1) + 0.6);
     const boardH = HEX_SIZE * (1.5 * 2 * R + 3.2);
@@ -278,6 +279,7 @@ function buildBoardLayer() {
     if (!c || typeof c.beginPath !== 'function') { boardLayer = null; return; }
     const S = HEX_SIZE;
     const RING_DROP = S * 0.34; // scenery ring sits lower than the arena
+    if (typeof isPuzzle === 'function' && isPuzzle()) { drawPuzzleBoard(c, S); return; }
 
     // Island shadow on the "table"
     c.fillStyle = 'rgba(47,42,69,0.18)';
@@ -348,6 +350,29 @@ function buildBoardLayer() {
         if (farSide && roll < 0.45) drawTree(c, px + jitter, py, S * 1.55, hash2(h.q, h.r, 8));
         else if (roll < 0.3) drawRock(c, px + jitter, py, S * 1.1);
         else if (roll < 0.55) drawBush(c, px + jitter, py, S * 1.1);
+    }
+}
+
+// Puzzle maps: only the puzzle's own tiles, as clay islands floating over the table
+function drawPuzzleBoard(c, S) {
+    const tiles = puzzleBoardHexes().map(h => ({ ...h, ...hexScreen(h.q, h.r) })).sort((a, b) => a.y - b.y || a.x - b.x);
+    for (const h of tiles) drawShadowBlob(c, h.x, h.y + S * 1.25, S * 0.9, S * 0.32, 0.14);
+    for (const h of tiles) {
+        c.fillStyle = CLAY.soilDark;
+        roundedHexPath(c, h.x, h.y + S * 0.5, S * 1.0, S * 0.3); c.fill();
+        c.fillStyle = CLAY.cliff;
+        roundedHexPath(c, h.x, h.y + S * 0.3, S * 1.0, S * 0.3); c.fill();
+    }
+    for (const h of tiles) {
+        c.fillStyle = CLAY.rim;
+        roundedHexPath(c, h.x, h.y + S * 0.1, S * 1.02, S * 0.3); c.fill();
+    }
+    for (const h of tiles) {
+        const v = hash2(h.q, h.r, 1);
+        const top = v < 0.4 ? CLAY.grassA : v < 0.8 ? CLAY.grassB : CLAY.grassC;
+        drawPrism(c, h.x, h.y, S * 0.92, S * 0.18, top, CLAY.grassSide, CLAY.grassEdgeLight, CLAY.grassEdgeDark);
+        const deco = hash2(h.q, h.r, 3);
+        if (deco < 0.12) drawTuft(c, h.x + (hash2(h.q, h.r, 4) - 0.5) * S * 0.9, h.y + S * 0.42, S);
     }
 }
 
@@ -872,6 +897,7 @@ function getDotPositions(val, cx, cy, s) {
 }
 
 function teamColors(team) {
+    team = typeof displayTeam === 'function' ? displayTeam(team) : team;
     return team === 'player'
         ? { base: CLAY.player, dark: CLAY.playerDark, light: CLAY.playerLight }
         : { base: CLAY.cpu, dark: CLAY.cpuDark, light: CLAY.cpuLight };
@@ -921,7 +947,26 @@ function drawAccessory(die, x, y, s, now, back) {
         return;
     }
 
-    if (a === 'angel') {
+    if (a === 'boss') {
+        // golden crown and glowing eyes
+        ctx.fillStyle = '#F2C96B';
+        ctx.beginPath();
+        ctx.moveTo(x - s * 0.34, top + s * 0.04);
+        ctx.lineTo(x - s * 0.4, top - s * 0.3);
+        ctx.lineTo(x - s * 0.18, top - s * 0.14);
+        ctx.lineTo(x, top - s * 0.4);
+        ctx.lineTo(x + s * 0.18, top - s * 0.14);
+        ctx.lineTo(x + s * 0.4, top - s * 0.3);
+        ctx.lineTo(x + s * 0.34, top + s * 0.04);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        for (const [gx, col] of [[-0.2, '#E0525E'], [0, '#4F9FD0'], [0.2, '#9BE35A']]) {
+            ctx.fillStyle = col;
+            ctx.beginPath(); ctx.arc(x + gx * s, top - s * 0.06, s * 0.045, 0, Math.PI * 2); ctx.fill();
+        }
+        const glow = 0.6 + Math.sin(now / 300) * 0.4;
+        ctx.fillStyle = `rgba(255, 90, 90, ${glow})`;
+        ctx.beginPath(); ctx.ellipse(x - s * 0.17, top + s * 0.2, s * 0.07, s * 0.035, 0.3, 0, Math.PI * 2); ctx.ellipse(x + s * 0.17, top + s * 0.2, s * 0.07, s * 0.035, -0.3, 0, Math.PI * 2); ctx.fill();
+    } else if (a === 'angel') {
         const bob = Math.sin(now / 400 + x) * s * 0.04;
         ctx.strokeStyle = '#B98A1E'; ctx.lineWidth = s * 0.1;
         ctx.beginPath(); ctx.ellipse(x, top - s * 0.2 + bob, s * 0.3, s * 0.08, 0, 0, Math.PI * 2); ctx.stroke();
@@ -1047,7 +1092,7 @@ function drawAccessory(die, x, y, s, now, back) {
 function drawDiePawn(cx, cy, die, opts = {}) {
     const S = HEX_SIZE;
     const now = performance.now();
-    const s = S * 1.0;              // cube width
+    const s = S * (die.archetype === 'boss' ? 1.32 : 1.0);              // cube width
     const depth = s * 0.24;
     const r = s * 0.24;
     const team = teamColors(die.team);
@@ -1188,7 +1233,7 @@ function drawHPBar(cx, bottomY, width, hp, maxHp, team, alpha=1) {
     ctx.fillStyle = 'rgba(47,42,69,0.7)';
     ctx.beginPath(); ctx.roundRect(x - DPR, y - DPR, w + 2 * DPR, h + 2 * DPR, h); ctx.fill();
     if (pct > 0) {
-        const col = pct <= 0.25 ? '#FF7A45' : pct <= 0.5 ? CLAY.gold : (team === 'player' ? CLAY.playerLight : CLAY.cpuLight);
+        const col = pct <= 0.25 ? '#FF7A45' : pct <= 0.5 ? CLAY.gold : (displayTeam(team) === 'player' ? CLAY.playerLight : CLAY.cpuLight);
         ctx.fillStyle = col;
         ctx.beginPath(); ctx.roundRect(x, y, Math.max(h, w * pct), h, h / 2); ctx.fill();
     }
@@ -1849,7 +1894,7 @@ function queueCreatureCrowds(standing, now) {
         for (const e of t.list) {
             let g = groups.find(x => x.kind === e.kind && (e.kind !== 'zombie' || x.team === e.unit.team));
             if (!g) groups.push(g = { kind: e.kind, team: e.unit.team, count: 0,
-                color: e.kind === 'zombie' ? (e.unit.team === 'player' ? CLAY.player : CLAY.cpu) : CREATURE_STYLE[e.kind].color });
+                color: e.kind === 'zombie' ? (displayTeam(e.unit.team) === 'player' ? CLAY.player : CLAY.cpu) : CREATURE_STYLE[e.kind].color });
             g.count++;
         }
         const shown = t.list.slice(0, 3);
@@ -1948,6 +1993,8 @@ function render() {
     // movement path of the action being previewed
     if (game.preview && !['PLAYER_TURN', 'PLAYER_ARCHER_TARGET'].includes(game.phase)) clearPreview();
     drawPreviewPath(now);
+    if (typeof drawPuzzleWarnings === 'function') drawPuzzleWarnings(now);
+    if (typeof drawPuzzleHint === 'function') drawPuzzleHint(now);
 
     // Pass 2: things that stand on tiles, in depth order
     const standing = [];
@@ -2023,7 +2070,7 @@ function render() {
 }
 
 function addFloatingText(text, q, r, color, size) {
-    const clean = stripEmoji(String(text));
+    const clean = stripEmoji(typeof localizeText === 'function' ? localizeText(String(text)) : String(text));
     if (!clean) return;
     const p = hexScreen(q, r);
     // stack texts that start at the same spot so they don't overprint

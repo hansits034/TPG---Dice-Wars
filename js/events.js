@@ -67,14 +67,27 @@ async function triggerRoguelikeUpgrade() {
     stopTurnTimer();
     SFX.powerUp();
     await offerPlayerUpgrade({ title: 'Choose an upgrade', lead: `Wave ${game.wave} reached. Pick one skill to level up.` });
-    if (autoUpgradeTeam('cpu')) await delay(800);
+    if (isHotseat()) {
+        // the other player picks their own upgrade too
+        swapSides();
+        await offerPlayerUpgrade({ title: `${sideName('player')}: choose an upgrade`, lead: `Wave ${game.wave} reached. Pick one skill to level up.`, tone: displayTeam('player') === 'player' ? 'teal' : 'berry' });
+        swapSides();
+    } else if (autoUpgradeTeam('cpu')) await delay(800);
     updateDiceHP();
 }
 
 // Comeback: losing a die to the enemy earns its side one skill upgrade (pick 1 of 3)
 function grantComebackUpgrade(team, fallen) {
+    if (isPuzzle()) return;
     if (game.phase === 'GAME_OVER') return;
     const name = archName(fallen.archetype);
+    if (team === 'cpu' && isHotseat()) {
+        // the other human picks it at the start of their next turn
+        game.pendingComebacksOther = game.pendingComebacksOther || [];
+        game.pendingComebacksOther.push(name);
+        addCombatLog(`${sideName('cpu')}'s ${name} was destroyed: comeback upgrade on their next turn`, '', '#F2B84B');
+        return;
+    }
     if (team === 'cpu') {
         if (autoUpgradeTeam('cpu')) addCombatLog(`CPU lost its ${name} and gained a comeback upgrade`, '', '#E0525E');
         updateDiceHP();
@@ -188,7 +201,7 @@ const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
 
 function applySwarmHit(unit, die) {
     const k = SWARM_KINDS[unit.kind || 'bee'];
-    applyIndirectDamage(die, brutalDamage(k.dmg, unit.brutal), unit.brutal ? `Brutal ${k.label}` : k.label, k.color);
+    applyIndirectDamage(die, brutalDamage(k.dmg - (unit.ownerTeam ? 2 : 0), unit.brutal), unit.brutal ? `Brutal ${k.label}` : k.label, k.color, unit.ownerTeam || null);
     if ((unit.kind || 'bee') === 'bee') die.moveDebuff = Math.max(die.moveDebuff, 1);
     if (unit.kind === 'mummy') { die.antiHealTurns = Math.max(die.antiHealTurns, 2); addFloatingText('Cursed: no healing', die.q, die.r, '#E9DCC0', 14); }
     if (unit.kind === 'robot') { const p = dieFxPos(die); fxRing(p.x, p.y + HEX_SIZE * 0.3, '#7EC8F2', HEX_SIZE * 1.2, 400, 4); }
@@ -490,6 +503,7 @@ function triggerTileEffectOnDie(die) {
         const snItem = game.vineTraps.get(k);
         const lock = brutalTrap(2, snItem.brutal); // rounds the die stays stuck
         if (kind === 'medusa') { die.frozen = Math.max(die.frozen, lock + 1); die.petrified = true; die.trapped = 0; SFX.block(); }
+        if (die.archetype === 'boss') die.frozen = Math.min(die.frozen, 2);
         else if (kind === 'snow') { die.frozen = Math.max(die.frozen, lock + 1); die.petrified = false; die.moveDebuff = Math.max(die.moveDebuff, 1); SFX.freeze(); }
         else { die.trapped = Math.max(die.trapped, lock); SFX.block(); }
         addFloatingText(kind === 'vines' ? `Rooted for ${lock} turns!` : sn.text.replace('2 rounds', `${lock} rounds`), die.q, die.r, sn.color, 20);
@@ -515,7 +529,7 @@ function triggerTileEffectOnDie(die) {
     // Roaming creatures on this tile
     if (game.bees) {
         for (const unit of game.bees) {
-            if (unit.q === die.q && unit.r === die.r && die.concealed === 0) {
+            if (unit.q === die.q && unit.r === die.r && die.concealed === 0 && unit.ownerTeam !== die.team) {
                 applySwarmHit(unit, die);
                 if (checkWin()) return;
             }
@@ -541,9 +555,12 @@ async function processBeesMovement() {
     for (const unit of game.bees) {
         const kind = SWARM_KINDS[unit.kind || 'bee'];
         // robots hunt the weakest die, everything else chases the nearest one
+        // boss minions only hunt the other side
+        const pool = unit.ownerTeam ? activeDice.filter(d => d.team !== unit.ownerTeam) : activeDice;
+        if (!pool.length) continue;
         const target = unit.kind === 'robot'
-            ? activeDice.reduce((a, b) => (b.hp < a.hp ? b : a))
-            : activeDice.reduce((a, b) => (hexDist(unit.q, unit.r, b.q, b.r) < hexDist(unit.q, unit.r, a.q, a.r) ? b : a));
+            ? pool.reduce((a, b) => (b.hp < a.hp ? b : a))
+            : pool.reduce((a, b) => (hexDist(unit.q, unit.r, b.q, b.r) < hexDist(unit.q, unit.r, a.q, a.r) ? b : a));
         const dist = hexDist(unit.q, unit.r, target.q, target.r);
         const steps = Math.min(kind.steps, Math.max(1, dist));
         const startQ = unit.q, startR = unit.r;

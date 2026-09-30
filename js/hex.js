@@ -61,17 +61,21 @@ function hexDist(q1, r1, q2, r2) {
 // Pathfinding & Movement Checks
 function isBlocked(q, r) {
     const k = hKey(q, r);
-    return (game.blocks && game.blocks.has(k)) || (game.voidTiles && game.voidTiles.has(k));
+    return (game.blocks && game.blocks.has(k)) || (game.voidTiles && game.voidTiles.has(k)) || !!(game.puzzleGaps && game.puzzleGaps.has(k));
 }
 
+// Every step costs one move, including the step onto the enemy you attack.
 function findReachable(die, maxMoves) {
+    const reachable = new Map();
+    const parents = new Map();
+    if (die.team === 'player' && typeof puzzleOutOfActions === 'function' && puzzleOutOfActions()) return { reachable, parents };
+    if (puzzleLocked(die)) return { reachable, parents };
     const moves = maxMoves !== undefined ? maxMoves : die.moveAllowance;
+    const canStrike = !(die.frozen > 0) && !(die.trapped > 0) && attackAvailable(die);
     const ownTeam = die.team;
     const ownDice = aliveDice(ownTeam);
     const enemyDice = aliveDice(ownTeam === 'player' ? 'cpu' : 'player');
 
-    const reachable = new Map();
-    const parents = new Map();
     const queue = [{ q: die.q, r: die.r, dist: 0 }];
     parents.set(hKey(die.q, die.r), null);
 
@@ -86,18 +90,12 @@ function findReachable(die, maxMoves) {
             if (blockedOwn) continue;
 
             const enemy = enemyDice.find(d => d.q === n.q && d.r === n.r);
-            let isEnemy = !!enemy && !enemy.concealed;
+            let isEnemy = !!enemy && !enemy.concealed && canStrike;
             if (isEnemy && die.lastAttackedEnemyId && enemy.id === die.lastAttackedEnemyId) {
                 isEnemy = false; // Cannot attack same enemy die in same turn!
             }
-            // A die that already attacked may keep moving (e.g. Sprint) but only attacks again
-            // with Attack Again (card) or Quick Destruct (Ninja)
-            if (isEnemy && die.hasAttackedThisTurn && !die.bonusAttackReady && !die.attackAgainActive) {
-                isEnemy = false;
-            }
             const nd = cur.dist + 1;
             if (nd > moves) continue;
-
             parents.set(key, hKey(cur.q, cur.r));
             if (isEnemy) {
                 reachable.set(key, { q: n.q, r: n.r, dist: nd, isAttack: true });

@@ -3,19 +3,28 @@
 // ==========================================================
 // Resolves only if the same match is still running, so async turn flows from an
 // abandoned match (Restart / Quit to Menu) stop at their next await instead of mutating the new match.
+// While the match is paused the wait simply extends until it resumes.
 function delay(ms) {
     const session = game;
-    return new Promise(r => setTimeout(() => {
-        if (game === session && !session.aborted) r();
-    }, ms));
+    return new Promise(r => {
+        const finish = () => {
+            if (game !== session || session.aborted) return;
+            if (session.paused) { setTimeout(finish, 100); return; }
+            r();
+        };
+        setTimeout(finish, ms);
+    });
 }
 
 // setTimeout that is dropped when the match is restarted or quit
 function matchTimeout(fn, ms) {
     const session = game;
-    return setTimeout(() => {
-        if (game === session && !session.aborted) fn();
-    }, ms);
+    const fire = () => {
+        if (game !== session || session.aborted) return;
+        if (session.paused) { setTimeout(fire, 100); return; }
+        fn();
+    };
+    return setTimeout(fire, ms);
 }
 function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
 function easeOutQuad(t) { return t * (2 - t); }
@@ -188,6 +197,8 @@ async function animateRoll(team, aliveUnits) {
 }
 
 async function startGame() {
+    if (gameSettings.mode === 'puzzle') return restartPuzzle(); // "Restart" from the pause menu
+    document.body.classList.remove('mode-puzzle');
     resetGame();
     startBGM();
     startStopwatch();
@@ -198,9 +209,15 @@ async function startGame() {
     updateMoves();
     updateWaveBadge();
     updateCardHand();
-    setMessage('Rolling to determine who goes first...');
+    updateSideLabels();
     setButtons(false, false);
-
+    if (isBossMode()) {
+        setMessage('The Dice Titan awakens...');
+        await delay(500);
+        showBossIntro();
+        return;
+    }
+    setMessage('Rolling to determine who goes first...');
     await delay(600);
     await rollForFirst();
 }
@@ -218,9 +235,9 @@ async function rollForFirst() {
         cpuTotal = cpuVals.reduce((a, b) => a + b, 0);
 
         const resultMsg = playerTotal > cpuTotal ?
-            '<div class="overlay-result player-win">You move first.</div>' :
+            `<div class="overlay-result player-win">${isHotseat() ? 'Player 1 moves first.' : 'You move first.'}</div>` :
             playerTotal < cpuTotal ?
-            '<div class="overlay-result cpu-win">The computer moves first.</div>' :
+            `<div class="overlay-result cpu-win">${isHotseat() ? 'Player 2 moves first.' : 'The computer moves first.'}</div>` :
             '<div class="overlay-result tie">Tied. Rolling again.</div>';
 
         showOverlay(`
@@ -229,13 +246,13 @@ async function rollForFirst() {
                 <p>Highest total starts. ${attempts > 1 ? `Reroll ${attempts - 1}.` : 'Your starting dice also set your first damage.'}</p>
                 <div class="roll-compare">
                     <div class="roll-side player">
-                        <div class="label">You</div>
+                        <div class="label">${isHotseat() ? 'Player 1' : 'You'}</div>
                         <div class="dice-row" id="first-roll-player"></div>
                         <div class="total-val">${playerTotal}</div>
                     </div>
                     <div class="vs-text">vs</div>
                     <div class="roll-side cpu">
-                        <div class="label">Computer</div>
+                        <div class="label">${isHotseat() ? 'Player 2' : 'Computer'}</div>
                         <div class="dice-row" id="first-roll-cpu"></div>
                         <div class="total-val">${cpuTotal}</div>
                     </div>
@@ -269,8 +286,8 @@ async function rollForFirst() {
             showOverlay(`
                 <div class="overlay-box" style="max-width:460px;">
                     <div class="overlay-icon teal">${iconSVG('dice')}</div>
-                    <h2>You go first</h2>
-                    <p>Each die moves up to its roll and hits for its face value. Click a teal die to begin.</p>
+                    <h2>${isHotseat() ? 'Player 1 goes first' : 'You go first'}</h2>
+                    <p>Each die moves up to its roll and hits for its face value. Pick one of your dice to begin.</p>
                     <div class="overlay-actions"><button class="clay-btn teal big" onclick="hideOverlay(); beginPlayerTurn();">Roll my dice</button></div>
                 </div>
             `);
@@ -286,8 +303,8 @@ async function rollForFirst() {
             showOverlay(`
                 <div class="overlay-box" style="max-width:460px;">
                     <div class="overlay-icon berry">${iconSVG('dice')}</div>
-                    <h2>The computer goes first</h2>
-                    <p>Watch where it moves. Your dice roll as soon as its turn ends.</p>
+                    <h2>${isHotseat() ? 'Player 2 goes first' : 'The computer goes first'}</h2>
+                    <p>${isHotseat() ? 'Hand the device to Player 2.' : 'Watch where it moves. Your dice roll as soon as its turn ends.'}</p>
                     <div class="overlay-actions"><button class="clay-btn berry big" onclick="hideOverlay(); beginCpuTurn();">Continue</button></div>
                 </div>
             `);
@@ -572,7 +589,7 @@ async function tickWaveEffects() {
 
     // Arena events come faster late in the match and stack with whatever is still on the board
     updateEventBadge();
-    if (isBlitzWave(game.wave)) {
+    if (isBlitzWave(game.wave) || bossEnraged()) {
         const frenzy = game.wave > BLITZ_EVERY_WAVE_AFTER;
         const wrap = document.getElementById('canvas-wrapper');
         const brutal = isBrutalWave(game.wave);
@@ -600,6 +617,20 @@ async function handleTurnEndSequence(finishedTeam) {
     // Guard against double turn-end (e.g. skill callback + end-of-turn flow, or timer racing an action)
     if (game.phase === 'GAME_OVER' || game.turnEnding || game.currentTurn !== finishedTeam) return;
     game.turnEnding = true;
+    if (isPuzzle()) {
+        // one-turn puzzles: the turn ending without a win is a miss,
+        // unless the moves just ran out while cards can still change things
+        if (checkWin()) return;
+        if (!game.puzzleGaveUp && !puzzleOutOfActions() && game.playerHand.length > 0) {
+            game.turnEnding = false;
+            game.phase = 'PLAYER_TURN';
+            setMessage('No moves left, but you still hold cards. Play one, or press End turn.');
+            setButtons(true, false);
+            return;
+        }
+        puzzleFailed();
+        return;
+    }
     stopTurnTimer();
     game.turnsInCurrentWave++;
 
@@ -676,9 +707,12 @@ async function triggerPlayerMageZap() {
     const playerMage = aliveDice('player').find(d => d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0);
     if (!playerMage || (playerMage.zapStacks || 0) <= 0 || !canUseActiveSkill(playerMage)) return;
 
+    if (isPuzzle() && puzzleOutOfActions()) { setMessage('No actions left in this puzzle.'); return; }
     game.phase = 'PLAYER_ANIMATING';
+    if (isPuzzle()) spendPuzzleAction(playerMage, { step: { t: 'zap', d: game.playerDice.indexOf(playerMage) } });
     await executeZapSkill(playerMage);
-    if (game.phase !== 'GAME_OVER') { game.phase = 'PLAYER_TURN'; updateSkillButtons(); }
+    if (isPuzzle() && game.phase !== 'GAME_OVER') { await puzzleAfterAction(); if (checkWin()) return; }
+    if (game.phase !== 'GAME_OVER') { game.phase = 'PLAYER_TURN'; updateSkillButtons(); updateMoves(); if (isPuzzle()) finishPlayerSkillAction(); }
 }
 
 // Frozen or rooted dice cannot use active skills
@@ -690,7 +724,7 @@ function canUseActiveSkill(die) {
 function finishPlayerSkillAction() {
     if (game.phase === 'GAME_OVER') return;
     game.phase = 'PLAYER_TURN';
-    if (totalMovesLeft('player') <= 0) {
+    if (!teamCanAct('player')) {
         setButtons(false, false);
         matchTimeout(() => handleTurnEndSequence('player'), 600);
     } else {
@@ -709,7 +743,12 @@ async function executeArcherLongShot(archerDie, targetEnemy) {
     const missRate = longShotLvl === 1 ? (0.02 * dist) : longShotLvl === 2 ? (0.01 * dist) : 0;
 
     archerDie.hasAttackedThisTurn = true;
-    archerDie.moveAllowance = 0; // Turn ends for archer after long shot
+    archerDie.lastAttackedEnemyId = targetEnemy.id; // Attack Again afterwards must pick a different enemy
+    if (!isPuzzle()) {
+        // outside puzzles the shot ends the Archer's turn (Attack Again gives the moves back)
+        archerDie.spareMoves = archerDie.moveAllowance;
+        archerDie.moveAllowance = 0;
+    }
     if (game.selectedDie === archerDie) {
         game.selectedDie = null;
         game.reachable = null;
@@ -743,6 +782,7 @@ async function executeArcherLongShot(archerDie, targetEnemy) {
 
 function triggerPlayerArcherShot() {
     if (game.phase !== 'PLAYER_TURN' || game.currentTurn !== 'player') return;
+    if (isPuzzle() && puzzleOutOfActions()) { setMessage('No actions left in this puzzle.'); return; }
     const archer = aliveDice('player').find(d => (d.archetype === 'archer' || getSkillLevel(d, 'longShot') > 0) && !d.hasAttackedThisTurn && canUseActiveSkill(d));
     if (!archer) return;
 
@@ -889,6 +929,8 @@ async function beginPlayerTurn() {
         d.attackAgainActive = false;
         d.lastAttackedEnemyId = null;
         d.bonusAttackReady = false;
+        d.strikeOnly = false;
+        d.spareMoves = 0;
         d.hasAttackedThisTurn = false;
     });
 
@@ -961,8 +1003,10 @@ function selectDie(die) {
         setMessage(`${archName(die.archetype)} is rooted for ${die.trapped} more turn${die.trapped>1?'s':''}.`);
         return;
     }
-    if (die.moveAllowance <= 0) {
-        setMessage(`${archName(die.archetype)} has no moves left. Pick another die.`);
+    if (!dieCanAct(die)) {
+        setMessage(puzzleLocked(die)
+            ? `${archName(die.archetype)} already attacked. Its ${die.moveAllowance} saved ${die.moveAllowance === 1 ? 'move unlocks' : 'moves unlock'} with Attack Again.`
+            : `${archName(die.archetype)} has no moves left. Pick another die.`);
         return;
     }
 
@@ -972,7 +1016,12 @@ function selectDie(die) {
     game.parents = parents;
 
     if (reachable.size === 0) {
-        setMessage(`${archName(die.archetype)} is boxed in. Pick another die.`);
+        const name = archName(die.archetype);
+        const why = typeof puzzleOutOfActions === 'function' && puzzleOutOfActions() ? `No actions left in this puzzle.`
+            : die.moveAllowance <= 0 ? (die.hasAttackedThisTurn ? `${name} already attacked this turn.` : `${name} has no moves left.`)
+            : die.hasAttackedThisTurn && !die.bonusAttackReady && !die.attackAgainActive ? `${name} already attacked and every free tile around it is blocked.`
+            : `${name} is boxed in: no free tile or enemy within reach.`;
+        setMessage(`${why} Pick another die.`);
         game.selectedDie = null;
         game.reachable = null;
         game.parents = null;
@@ -1069,6 +1118,7 @@ function tryAngelRevive(deadDie) {
 // Central on-death handler for every damage source: Rage Explode, Necromancer Undead split, Angel Revive
 function handleDieDeath(die) {
     if (!die || die.hp > 0 || die._deathHandled) return;
+    if (bossRebirth(die)) return;
     die.hp = 0;
     die._deathHandled = true;
     die.moveAllowance = 0;
@@ -1125,6 +1175,7 @@ function computeMeleeDamage(die, enemyDie, dist) {
     if (tankKillerLvl > 0) {
         const pct = tankKillerLvl === 1 ? 0.10 : tankKillerLvl === 2 ? 0.15 : tankKillerLvl === 3 ? 0.20 : 0.25;
         tankKiller = Math.max(1, Math.round(enemyDie.hp * pct));
+        if (enemyDie.archetype === 'boss') tankKiller = Math.min(tankKiller, 6);
         raw += tankKiller;
     }
 
@@ -1144,10 +1195,11 @@ function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
 
     // A follow-up attack spends the permission that allowed it (one extra attack per grant)
     if (die.hasAttackedThisTurn) {
-        if (die.bonusAttackReady) die.bonusAttackReady = false;
-        else if (die.attackAgainActive) die.attackAgainActive = false;
+        if (die.bonusAttackReady) die.bonusAttackReady = Math.max(0, (die.bonusAttackReady | 0) - 1);
+        else if (die.attackAgainActive) die.attackAgainActive--;
     }
     die.hasAttackedThisTurn = true;
+    die.strikeOnly = false;
     SFX.attack();
     addFloatingText(`-${damage}`, tq, tr, '#ff4466', 22);
     if (die.damageMultiplier > 1) addFloatingText(`×${die.damageMultiplier}!`, tq, tr - 0.4, '#f59e0b', 14);
@@ -1210,7 +1262,10 @@ function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
     }
 
     // Surviving defender (not revived elsewhere) is knocked back to the attacker's previous hex
-    if (enemyDie.hp > 0 && die.hp > 0 && enemyDie.q === tq && enemyDie.r === tr) {
+    if (enemyDie.hp > 0 && die.hp > 0 && enemyDie.q === tq && enemyDie.r === tr && enemyDie.archetype === 'boss') {
+        die.q = prevQ; die.r = prevR;
+        startSlide(die, tq, tr, 300, 0.35);
+    } else if (enemyDie.hp > 0 && die.hp > 0 && enemyDie.q === tq && enemyDie.r === tr) {
         enemyDie.q = prevQ; enemyDie.r = prevR;
         startSlide(enemyDie, tq, tr, 300, 0.35);
         enemyDie.movedThisWave = true;
@@ -1222,18 +1277,22 @@ function resolveMeleeAttack(die, enemyDie, info, tq, tr, prevQ, prevR) {
     die.moveAllowance = Math.max(0, die.moveAllowance - info.dist);
     if (die.hp <= 0) die.moveAllowance = 0;
 
+    // Extra attacks: Attack Again (card) and the Ninja's Quick Destruct gamble stack
+    let extra = die.attackAgainActive | 0;
+    die.attackAgainActive = false;
     const quickLvl = getSkillLevel(die, 'quickDestruct');
     const quickChance = quickLvl === 1 ? 0.25 : quickLvl === 2 ? 0.35 : quickLvl === 3 ? 0.50 : 0;
-    if (quickLvl > 0 && die.moveAllowance > 0 && Math.random() < quickChance) {
-        die.attackAgainActive = true;
+    if (quickLvl > 0 && die.hp > 0 && Math.random() < quickChance) {
+        extra++;
         addFloatingText('🥷 Quick Destruct!', die.q, die.r, '#60a5fa', 18);
     }
+    die.bonusAttackReady = (die.bonusAttackReady | 0) + extra;
 
-    if (die.attackAgainActive && die.moveAllowance > 0) {
-        die.attackAgainActive = false;
-        die.lastAttackedEnemyId = attackedId;
-        die.bonusAttackReady = true;
-    } else {
+    die.lastAttackedEnemyId = attackedId;
+    // Puzzles keep the leftover moves (the die may walk on). Other modes stop the die unless it holds an
+    // extra attack; Attack Again played later gives the leftover moves back.
+    if (!isPuzzle() && (!(die.bonusAttackReady > 0) || die.hp <= 0)) {
+        die.spareMoves = die.moveAllowance;
         die.moveAllowance = 0;
     }
 }
@@ -1286,6 +1345,7 @@ async function handlePlayerMove(tq, tr) {
     const info = game.reachable.get(hKey(tq, tr));
     const die = game.selectedDie;
     const path = reconstructPath(game.parents, die.q, die.r, tq, tr);
+    spendPuzzleAction(die, info, path);
 
     game.phase = 'PLAYER_ANIMATING';
     game.reachable = null;
@@ -1294,6 +1354,7 @@ async function handlePlayerMove(tq, tr) {
 
     if (info.isAttack) {
         await performMeleeAttack(die, path, info, tq, tr);
+        if (isPuzzle()) await puzzleAfterAction();
 
         updateMoves();
         updateDiceHP();
@@ -1304,13 +1365,15 @@ async function handlePlayerMove(tq, tr) {
 
         game.selectedDie = null;
 
-        if (die.hp > 0 && die.moveAllowance > 0) {
+        if (dieCanAct(die)) {
             game.phase = 'PLAYER_TURN';
-            setMessage(`Attack Again! ${die.moveAllowance} moves left.`);
+            setMessage(attackAvailable(die)
+                ? `Extra attack ready. ${die.moveAllowance} ${die.moveAllowance === 1 ? 'move' : 'moves'} left.`
+                : `${archName(die.archetype)} attacked. Attack Again unlocks its ${die.moveAllowance} saved ${die.moveAllowance === 1 ? 'move' : 'moves'}.`);
             selectDie(die);
-        } else if (totalMovesLeft('player') > 0) {
+        } else if (teamCanAct('player')) {
             game.phase = 'PLAYER_TURN';
-            setMessage(`Attack done. ${totalMovesLeft('player')} total moves remaining.`);
+            setMessage(`Attack done. Pick another die.`);
             setButtons(true, false);
         } else {
             setMessage("No moves remaining. Ending turn...");
@@ -1322,19 +1385,20 @@ async function handlePlayerMove(tq, tr) {
         if (game.phase === 'GAME_OVER') return;
         die.moveAllowance = Math.max(0, die.moveAllowance - info.dist);
         if (die.hp <= 0 || die.trapped > 0) die.moveAllowance = 0;
+        if (isPuzzle()) { await puzzleAfterAction(); if (checkWin()) return; }
 
         updateMoves();
         updateDiceHP();
         updateSkillButtons();
 
-        if (totalMovesLeft('player') <= 0) {
+        if (!teamCanAct('player')) {
             game.selectedDie = null;
             setMessage("No moves remaining. Ending turn...");
             await delay(600);
             await handleTurnEndSequence('player');
         } else {
             game.phase = 'PLAYER_TURN';
-            if (die.hp > 0 && die.moveAllowance > 0) {
+            if (dieCanAct(die)) {
                 selectDie(die);
             } else {
                 game.selectedDie = null;
@@ -1348,6 +1412,7 @@ async function handlePlayerMove(tq, tr) {
 function endTurn() {
     if (game.phase !== 'PLAYER_TURN' && game.phase !== 'PLAYER_CARD_TARGET') return;
     game.phase = 'TURN_ENDING';
+    game.puzzleGaveUp = true;
     clearPreview();
     completeTip('endTurn');
     game.selectedDie = null;
@@ -1368,7 +1433,7 @@ function endTurn() {
 // Psychic Push can move any die: an enemy out of position or an ally out of danger
 function handlePsychicEnemySelect(q, r) {
     const die = getDieAt(q, r);
-    const valid = die && die.hp > 0 && (die.team === 'player' || !die.concealed);
+    const valid = die && die.hp > 0 && die.archetype !== 'boss' && (die.team === 'player' || !die.concealed);
     if (valid) {
         game.psychicTargetEnemy = die;
         game.selectedDie = null;
@@ -1467,6 +1532,7 @@ function handleMindControlEnemySelect(q, r) {
         die.lastAttackedEnemyId = null;
         die.attackAgainActive = false;
         die.bonusAttackReady = false;
+        die.strikeOnly = false;
         die.damageMultiplier = 1;
 
         SFX.powerUp();
@@ -1494,8 +1560,10 @@ async function handleArcherTargetSelect(q, r) {
         const archer = game.archerSource;
         game.archerSource = null;
         game.phase = 'PLAYER_ANIMATING';
+        if (isPuzzle()) spendPuzzleAction(archer, { step: { t: 'shot', d: game.playerDice.indexOf(archer), q, r } });
         await executeArcherLongShot(archer, enemy);
         if (game.phase === 'GAME_OVER') return true;
+        if (isPuzzle()) { await puzzleAfterAction(); if (checkWin()) return true; }
         setMessage('🏹 Arrow fired! Archer turn ended.');
         finishPlayerSkillAction();
         return true;
@@ -1537,11 +1605,36 @@ function renderGameOverStatsHTML(isWin) {
             </div>`;
     };
 
+    const endless = isBossEndless() ? finishEndlessScore() : null;
+    if (endless) return `
+        <div class="overlay-box game-over-modal-box">
+            <div class="overlay-icon ${endless.isNew ? 'gold' : 'violet'}">${iconSVG(endless.isNew ? 'trophy' : 'boss')}</div>
+            <h2>${endless.isNew ? 'New high score' : 'Raid over'}</h2>
+            <div class="endless-score"><b>${endless.score}</b><span>damage dealt to the Titan</span></div>
+            <p>Your squad pushed the Titan to <b>level ${game.bossLevel || 1}</b>. ${endless.isNew ? 'That beats your previous best.' : `Best so far: <b>${endless.best}</b>.`}</p>
+
+            <div class="game-over-match-summary">
+                <span>Reached <b>wave ${game.wave}</b></span>
+                <span>Match time <b>${timeStr}</b></span>
+                <span><b>${startHp} HP</b>, ${diffLabel}</span>
+            </div>
+
+            <div class="game-over-stats-grid" style="grid-template-columns:1fr;max-width:380px;margin-left:auto;margin-right:auto;">
+                ${teamBlock(game.playerDice || [], 'Your team', 'player')}
+            </div>
+
+            <div class="overlay-actions">
+                <button class="clay-btn plain" onclick="hideOverlay(); quitToMainMenu();">${iconSVG('home')}Main menu</button>
+                <button class="clay-btn violet" onclick="hideOverlay(); startGame();">${iconSVG('restart')}Try again</button>
+            </div>
+        </div>
+    `;
+
     return `
         <div class="overlay-box game-over-modal-box">
-            <div class="overlay-icon ${isWin ? 'gold' : 'berry'}">${iconSVG(isWin ? 'trophy' : 'necromancer')}</div>
-            <h2>${isWin ? 'Victory' : 'Defeat'}</h2>
-            <p>${isWin ? 'Every enemy die has been knocked out.' : 'Your last die fell. The computer holds the arena.'}</p>
+            <div class="overlay-icon ${isWin || isHotseat() ? 'gold' : 'berry'}">${iconSVG(isWin || isHotseat() ? 'trophy' : 'necromancer')}</div>
+            <h2>${isHotseat() ? `${sideName(isWin ? 'player' : 'cpu')} wins` : isBossMode() ? (isWin ? 'The Titan falls' : 'The Titan wins') : (isWin ? 'Victory' : 'Defeat')}</h2>
+            <p>${isHotseat() ? `${sideName(isWin ? 'cpu' : 'player')} is out of dice.` : isBossMode() ? (isWin ? 'Your squad brought down the Dice Titan.' : 'The Titan crushed your last die.') : (isWin ? 'Every enemy die has been knocked out.' : 'Your last die fell. The computer holds the arena.')}</p>
 
             <div class="game-over-match-summary">
                 <span>Reached <b>wave ${game.wave}</b></span>
@@ -1550,8 +1643,8 @@ function renderGameOverStatsHTML(isWin) {
             </div>
 
             <div class="game-over-stats-grid">
-                ${teamBlock(game.playerDice || [], 'Your team', 'player')}
-                ${teamBlock(game.cpuDice || [], 'Computer', 'cpu')}
+                ${teamBlock(game.playerDice || [], isHotseat() ? sideName('player') : 'Your team', displayTeam('player'))}
+                ${teamBlock(game.cpuDice || [], isHotseat() ? sideName('cpu') : isBossMode() ? 'The Titan' : 'Computer', displayTeam('cpu'))}
             </div>
             <p style="font-size:0.8rem;margin-top:10px;">Gold is damage dealt, red is damage taken, teal is HP healed.</p>
 
@@ -1615,6 +1708,10 @@ function checkAndReleaseSoloMindControl() {
 }
 
 function checkWin() {
+    if (isPuzzle()) {
+        if (game.phase === 'GAME_OVER') return true;
+        return aliveDice('cpu').length === 0 ? puzzleSolved() : false;
+    }
     checkAndReleaseSoloMindControl();
 
     const pAlive = aliveDice('player').length;
