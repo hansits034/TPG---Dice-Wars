@@ -94,6 +94,11 @@ function dieTagsHTML(d) {
     const rage = getDieRageBonus(d);
     if (rage > 0) tags.push(`<span class="tag rage">${iconSVG('flame')}+${rage} rage</span>`);
     if (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) tags.push(`<span class="tag zap">${iconSVG('bolt')}Zap ${d.zapStacks || 0}/2</span>`);
+    const psyLvl = Math.min(3, getSkillLevel(d, 'psychic'));
+    if (psyLvl > 0 && d.psychicMisses > 0) {
+        const pity = PSYCHIC_PITY[psyLvl];
+        tags.push(`<span class="tag zap">${iconSVG('telekinator')}${d.psychicMisses >= pity ? 'Push guaranteed next' : `Push misses ${d.psychicMisses}/${pity}`}</span>`);
+    }
     return tags.join('');
 }
 
@@ -143,6 +148,12 @@ function dieTagsMiniHTML(d) {
     const rage = getDieRageBonus(d);
     if (rage > 0) chip('rage', 'flame', '+' + rage, `Rage bonus +${rage} damage`);
     if (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) chip('zap', 'bolt', d.zapStacks || 0, `Zap charges ${d.zapStacks || 0}/2`);
+    const psyLvl = Math.min(3, getSkillLevel(d, 'psychic'));
+    if (psyLvl > 0 && d.psychicMisses > 0) {
+        const pity = PSYCHIC_PITY[psyLvl];
+        chip('zap', 'telekinator', d.psychicMisses >= pity ? '!' : `${d.psychicMisses}/${pity}`,
+            d.psychicMisses >= pity ? 'Next Psychic Push is guaranteed' : `Psychic Push missed ${d.psychicMisses} in a row; guaranteed after ${pity - d.psychicMisses} more`);
+    }
     return t.join('');
 }
 

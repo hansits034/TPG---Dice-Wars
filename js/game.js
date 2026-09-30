@@ -899,17 +899,17 @@ async function beginPlayerTurn() {
     // Check Telekinator Psychic Push skill (40% / 65% / 90%) - Exactly 1 roll attempt per team turn
     const teleDie = alive.find(d => getSkillLevel(d, 'psychic') > 0 && d.frozen === 0 && d.trapped === 0);
     if (teleDie) {
-        const psychicLvl = getSkillLevel(teleDie, 'psychic');
-        const chance = psychicLvl === 1 ? 0.40 : psychicLvl === 2 ? 0.65 : 0.90;
-        const roll = Math.random();
-        if (roll < chance) {
+        const psy = rollPsychicPush(teleDie);
+        const chance = psy.chance;
+        if (psy.hit) {
             const cpuAlive = aliveDice('cpu').filter(cd => !cd.concealed);
             const pushable = [...cpuAlive, ...aliveDice('player')];
             if (pushable.length > 0) {
                 SFX.powerUp();
                 game.psychicAura = true;
                 if (canvasWrap) canvasWrap.classList.add('aura-psychic');
-                addFloatingText('🔮 Psychic Push Triggered!', teleDie.q, teleDie.r, '#c084fc', 22);
+                addFloatingText(psy.guaranteed ? 'Guaranteed Psychic Push!' : 'Psychic Push Triggered!', teleDie.q, teleDie.r, '#c084fc', 22);
+                if (psy.guaranteed) addCombatLog('Telekinator focused: Psychic Push guaranteed after a bad-luck streak', '', '#8468C4');
                 await delay(700);
                 game.psychicSource = teleDie;
                 game.phase = 'PLAYER_PSYCHIC_ENEMY';
@@ -931,7 +931,9 @@ async function beginPlayerTurn() {
                 return;
             }
         } else {
-            addFloatingText(`🔮 Psychic Push Missed (${Math.round(chance * 100)}%)`, teleDie.q, teleDie.r, '#94a3b8', 14);
+            addFloatingText(`Psychic Push missed (${Math.round(chance * 100)}%)`, teleDie.q, teleDie.r, '#94a3b8', 14);
+            addCombatLog(`Psychic Push missed (${Math.round(chance * 100)}%), ${psychicPityText(psy.left)}`, '', '#94a3b8');
+            updateDiceHP();
         }
     }
 

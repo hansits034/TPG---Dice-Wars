@@ -26,6 +26,7 @@ function createDie(id, q, r, team, archetypeId='dracula', isSplit=false, isClone
         damageMultiplier: 1,
         attackAgainActive: false,
         bonusAttackReady: false,
+        psychicMisses: 0,
         cloneActive: false,
         isCloneDie: isClone,
         halfDamage: 0,
@@ -210,6 +211,21 @@ function updateRageBonus(die) {
         die.bonusDamageFromDamageTaken = newBonus;
         addFloatingText(`😡 Rage +${diff} DMG!`, die.q, die.r, '#ef4444', 18);
     }
+}
+
+// Psychic Push roll with bad-luck protection:
+// after 3 / 2 / 1 misses in a row (Lvl 1 / 2 / 3) the next roll always succeeds
+const PSYCHIC_CHANCE = [0, 0.40, 0.65, 0.90];
+const PSYCHIC_PITY = [0, 3, 2, 1];
+function rollPsychicPush(die) {
+    const lvl = Math.max(1, Math.min(3, getSkillLevel(die, 'psychic')));
+    const guaranteed = (die.psychicMisses || 0) >= PSYCHIC_PITY[lvl];
+    const hit = guaranteed || Math.random() < PSYCHIC_CHANCE[lvl];
+    die.psychicMisses = hit ? 0 : (die.psychicMisses || 0) + 1;
+    return { hit, guaranteed, chance: PSYCHIC_CHANCE[lvl], pity: PSYCHIC_PITY[lvl], left: PSYCHIC_PITY[lvl] - die.psychicMisses };
+}
+function psychicPityText(left) {
+    return left <= 0 ? 'the next push is guaranteed' : `guaranteed after ${left} more miss${left > 1 ? 'es' : ''}`;
 }
 
 // Defender Toughness: flat reduction of incoming contact damage (-3 / -5 / -7)

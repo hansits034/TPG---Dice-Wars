@@ -72,7 +72,7 @@ const ARCHETYPES = [
     {
         id: 'telekinator', name: 'Telekinator', icon: '',
         skills: [
-            { id: 'psychic', name: 'Psychic Push', desc: 'Psychic ability (40% chance at Lvl 1, 65% at Lvl 2, 90% at Lvl 3) to push any 1 die, enemy or ally, to a chosen empty tile at start of turn', maxLvl: 3, curLvl: 1 },
+            { id: 'psychic', name: 'Psychic Push', desc: 'Psychic ability (40% chance at Lvl 1, 65% at Lvl 2, 90% at Lvl 3) to push any 1 die, enemy or ally, to a chosen empty tile at start of turn. Bad-luck protection: guaranteed after 3 misses in a row (2 at Lvl 2, 1 at Lvl 3)', maxLvl: 3, curLvl: 1 },
             { id: 'hypno', name: 'Hypno Steal', desc: 'Every 3 waves, 40% chance (70% at Lvl 2) to steal/destroy enemy card', maxLvl: 2, curLvl: 0 },
             { id: 'mindControl', name: 'Mind Control', desc: 'Active skill (5 wave CD, disabled if 1 enemy remains): Control 1 enemy die to fight for your team for 2 waves! Reverts with -6 HP recoil', maxLvl: 1, curLvl: 0 }
         ]

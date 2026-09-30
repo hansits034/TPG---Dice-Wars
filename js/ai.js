@@ -222,7 +222,9 @@ async function beginCpuTurn() {
         const psychicLvl = getSkillLevel(cpuPsychic, 'psychic');
         const chance = psychicLvl === 1 ? 0.40 : psychicLvl === 2 ? 0.65 : 0.90;
         const pAlive = aliveDice('player').filter(pd => !pd.concealed);
-        if (pAlive.length > 0 && Math.random() < chance) {
+        const psy = pAlive.length > 0 ? rollPsychicPush(cpuPsychic) : { hit: false };
+        if (!psy.hit && pAlive.length > 0) addFloatingText('CPU Psychic missed', cpuPsychic.q, cpuPsychic.r, '#94a3b8', 13);
+        if (psy.hit) {
             const threatened = alive.filter(d => d.hp > 0 && d.hp <= (d.maxHp || MAX_HP) * 0.35 &&
                 pAlive.some(p => hexDist(p.q, p.r, d.q, d.r) <= 1));
             let victim, emptyHex;
@@ -249,7 +251,7 @@ async function beginCpuTurn() {
             SFX.swap();
             spawnParticles(oldP.x + gridCenterX, oldP.y + gridCenterY, '#c084fc', 18, 3, 600);
             spawnParticles(newP.x + gridCenterX, newP.y + gridCenterY, '#c084fc', 18, 3, 600);
-            addFloatingText('🔮 CPU Psychic Push!', emptyHex.q, emptyHex.r, '#c084fc', 20);
+            addFloatingText(psy.guaranteed ? 'CPU guaranteed Psychic Push!' : 'CPU Psychic Push!', emptyHex.q, emptyHex.r, '#c084fc', 20);
             fxBeam(cpuPsychic, victim, '#B79CF2', 500);
             addCombatLog(`🔮 CPU Telekinator Psychic Pushed ${victim.icon} ${victim.id.toUpperCase()}!`, '🔮', '#c084fc');
             applyForcedMoveBleed(victim, hexDist(oldQ, oldR, emptyHex.q, emptyHex.r));
