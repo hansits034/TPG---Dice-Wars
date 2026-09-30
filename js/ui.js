@@ -547,7 +547,7 @@ function openHelpModal() {
             <h3>Arena rhythm</h3>
             <ul>
                 <li><strong>Every 3 waves</strong>, glowing crystals appear. Step on one to draw a card (hand limit 3, or 4 with a Defender, Samurai or Doctor).</li>
-                <li><strong>Every 4 waves</strong>, pick one skill upgrade from three choices.</li>
+                <li><strong>Every 4 waves</strong>, pick one skill upgrade from three choices. Losing a die to the enemy also earns a <strong>comeback upgrade</strong> for your remaining dice.</li>
                 <li><strong>Arena events</strong> hit on waves 5, 10, 14, 18, 21, 24, 27, 30, then every 2 waves, and every single wave from wave 37. Their effects stack. From wave 40 they turn <strong>brutal</strong>: 50% more tiles, double damage, traps last 2 waves longer.</li>
             </ul>
 

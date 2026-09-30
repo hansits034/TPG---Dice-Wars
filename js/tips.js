@@ -12,6 +12,7 @@ const TIPS = {
     event:     { title: 'Arena event', text: 'The arena changes on set waves, faster as the match goes on. The chip at the top counts down to the next one, and effects stack.' },
     hazard:    { title: 'Hazard tiles', text: 'Dark tiles with a bright outline hurt, slow or root any die that steps on them.' },
     bleed:     { title: 'Bleeding', text: 'A bleeding die loses HP for every tile it moves and cannot heal until it wears off.' },
+    comeback:  { title: 'Comeback upgrade', text: 'When the enemy destroys one of your dice, you pick a skill upgrade for your remaining dice at the start of your next turn. The computer gets the same.' },
     upgrade:   { title: 'Level up', text: 'Every 4 waves you pick one skill upgrade. The bars on each die show its skill levels.' },
 };
 

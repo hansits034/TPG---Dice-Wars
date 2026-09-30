@@ -33,7 +33,7 @@ function applyForcedMoveBleed(die, distance) {
         const stackRate = Math.max(1, die.bleedStacks || 1);
         const totalBleed = distance * stackRate;
         const bleedDmg = Math.min(11, totalBleed);
-        const actualDmg = applyIndirectDamage(die, bleedDmg, `🩸 Forced Bleed (Max 11)`, '#ef4444');
+        const actualDmg = applyIndirectDamage(die, bleedDmg, `🩸 Forced Bleed (Max 11)`, '#ef4444', die.bleedSourceTeam || null);
         if (actualDmg > 0 && die.bleedSourceDieId) {
             const srcDracula = typeof allDice === 'function' ? allDice().find(d => d.id === die.bleedSourceDieId) : null;
             if (srcDracula) {
@@ -93,10 +93,10 @@ async function animateMove(die, path, isForced=false) {
                     const stepBleed = Math.min(11 - forcedBleedAccum, stackRate);
                     if (stepBleed > 0) {
                         forcedBleedAccum += stepBleed;
-                        actualBleed = applyIndirectDamage(die, stepBleed, `🩸 Forced Bleed (${stackRate} DMG/tile)`, '#ef4444');
+                        actualBleed = applyIndirectDamage(die, stepBleed, `🩸 Forced Bleed (${stackRate} DMG/tile)`, '#ef4444', die.bleedSourceTeam || null);
                     }
                 } else {
-                    actualBleed = applyIndirectDamage(die, stackRate, `🩸 Bleed (${stackRate} DMG/tile)`, '#ef4444');
+                    actualBleed = applyIndirectDamage(die, stackRate, `🩸 Bleed (${stackRate} DMG/tile)`, '#ef4444', die.bleedSourceTeam || null);
                 }
 
                 if (actualBleed > 0 && die.bleedSourceDieId) {
@@ -662,7 +662,7 @@ async function executeZapSkill(mageDie) {
     fxBolt(mageDie, nearestEnemy);
     if (isCrit) fxImpact(nearestEnemy, '#E7DDFF', true);
     await delay(170);
-    const actualDmg = applyIndirectDamage(nearestEnemy, zapDmg, isCrit ? '⚡💥 CRIT ZAP' : '⚡ ZAP', '#c084fc');
+    const actualDmg = applyIndirectDamage(nearestEnemy, zapDmg, isCrit ? '⚡💥 CRIT ZAP' : '⚡ ZAP', '#c084fc', mageDie.team);
     creditDamageDealt(mageDie, actualDmg);
 
     updateDiceHP();
@@ -730,7 +730,7 @@ async function executeArcherLongShot(archerDie, targetEnemy) {
         spawnParticles(p.x + gridCenterX, p.y + gridCenterY, '#38bdf8', 18, 3, 700);
         addCombatLog(`${archerDie.icon} ${archerDie.id.toUpperCase()} Long Shot hit ${targetEnemy.icon} ${targetEnemy.id.toUpperCase()} (${effDmg} DMG before shields)!`, '🏹', '#38bdf8');
 
-        const actualDmg = applyIndirectDamage(targetEnemy, effDmg, '🏹 Long Shot', '#38bdf8');
+        const actualDmg = applyIndirectDamage(targetEnemy, effDmg, '🏹 Long Shot', '#38bdf8', archerDie.team);
         creditDamageDealt(archerDie, actualDmg);
     }
 
@@ -854,6 +854,8 @@ async function beginPlayerTurn() {
     game.phase = 'PLAYER_ROLL';
     game.currentTurn = 'player';
     game.turnEnding = false;
+    await processComebackUpgrades();
+    if (game.phase === 'GAME_OVER') return;
     game.selectedDie = null;
     game.reachable = null;
     game.parents = null;
@@ -1095,8 +1097,12 @@ function handleDieDeath(die) {
     }
 
     if (die.isCloneDie) return;
-    if (handleUndeadSplit(die)) return;
-    tryAngelRevive(die);
+    // the side that owns the die (a mind-controlled die still belongs to its original team)
+    const owner = die.isMindControlled ? die.originalTeam : die.team;
+    const killedByEnemy = !!die.lastHitTeam && die.lastHitTeam !== owner;
+    if (handleUndeadSplit(die)) { if (killedByEnemy) grantComebackUpgrade(owner, die); return; }
+    if (tryAngelRevive(die)) return; // revived on the spot: not a real loss
+    if (killedByEnemy) grantComebackUpgrade(owner, die);
 }
 
 // Shared melee resolution for player & CPU once the attacker has stepped onto the enemy hex

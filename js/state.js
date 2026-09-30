@@ -101,6 +101,7 @@ function resetGame() {
         mindControlUsedWave: { player: -99, cpu: -99 },
         pivotUsedWave: { player: -99, cpu: -99 },
         turnEnding: false,
+        pendingComebacks: [],
         aborted: false,
         pivotPreview: false,
         combatLog: [],
@@ -151,7 +152,8 @@ function getDieEffectiveDamage(die) {
 }
 
 // Helper for indirect / non-contact damage (absorbed by Aegis shield up to 15)
-function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444') {
+// sourceTeam: the team responsible (null for neutral arena hazards); used for comeback upgrades
+function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444', sourceTeam=null) {
     if (!die || die.hp <= 0 || amount <= 0) return 0;
 
     let dmgToApply = amount;
@@ -163,6 +165,7 @@ function applyIndirectDamage(die, amount, sourceName='Indirect', color='#ef4444'
     }
 
     if (dmgToApply > 0) {
+        die.lastHitTeam = sourceTeam;
         die.hp -= dmgToApply;
         die.hitAt = performance.now();
         if (typeof dieFxPos === 'function') {
@@ -259,6 +262,7 @@ function creditDamageDealt(attacker, amount) {
 // Direct / contact damage (not absorbed by Aegis). Tracks stats and triggers on-death effects.
 function dealDirectDamage(target, amount, attacker=null, label=null, color='#ef4444') {
     if (!target || target.hp <= 0 || amount <= 0) return 0;
+    target.lastHitTeam = attacker ? attacker.team : null;
     target.hp -= amount;
     if (target.hp < 0) target.hp = 0;
     target.hitAt = performance.now();

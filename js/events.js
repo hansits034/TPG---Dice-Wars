@@ -1,88 +1,105 @@
 // ==========================================================
 // 12. ARENA BLITZ, EVENT TILES, ROGUELIKE UPGRADES & MINIONS
 // ==========================================================
+// Skills that can still level up for a team (mind-controlled enemies and clones excluded)
+function upgradeOptions(team) {
+    const out = [];
+    aliveDice(team).filter(d => !d.isMindControlled && !d.isCloneDie).forEach((die, index) => {
+        die.skills.forEach(skill => {
+            if (skill.curLvl < skill.maxLvl) out.push({ die, dieIndex: index + 1, skill });
+        });
+    });
+    return out;
+}
+
+function applyUpgradeChoice(choice, cpu = false) {
+    choice.skill.curLvl++;
+    fxLevelUp(choice.die);
+    addFloatingText(`${cpu ? 'CPU: ' : ''}${choice.skill.name} Lvl ${choice.skill.curLvl}!`, choice.die.q, choice.die.r, cpu ? '#ef4444' : '#fbbf24', 20);
+    SFX.powerUp();
+}
+
+// Player picks 1 of 3 random upgrades. Resolves once chosen (or instantly in Auto play).
+async function offerPlayerUpgrade({ title, lead, icon = 'star', tone = 'gold' }) {
+    const options = upgradeOptions('player');
+    if (!options.length || game.phase === 'GAME_OVER') return false;
+    const choices = options.sort(() => Math.random() - 0.5).slice(0, 3);
+    if (fastAutoMode) { applyUpgradeChoice(choices[0]); return true; }
+    showTip('upgrade');
+    await new Promise(resolve => {
+        window._chooseUpgrade = function (idx) {
+            applyUpgradeChoice(choices[idx]);
+            hideOverlay();
+            resolve();
+        };
+        showOverlay(`
+            <div class="overlay-box">
+                <div class="overlay-icon ${tone}">${iconSVG(icon)}</div>
+                <h2>${title}</h2>
+                <p>${lead}</p>
+                <div class="upgrade-cards-grid">
+                    ${choices.map((c, i) => `
+                        <button class="upgrade-card-item" onclick="_chooseUpgrade(${i})">
+                            ${classBadge(c.die.archetype, 'lg')}
+                            <div class="upgrade-info">
+                                <div class="upgrade-name">${c.skill.name}<small>${archName(c.die.archetype)}, die ${c.dieIndex}</small></div>
+                                <div class="upgrade-desc">${c.skill.desc}</div>
+                            </div>
+                            <span class="upgrade-badge">${c.skill.curLvl === 0 ? 'Unlock' : 'Level ' + (c.skill.curLvl + 1)}</span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+        `);
+    });
+    return true;
+}
+
+// CPU levels up a random skill; returns true if something was upgraded
+function autoUpgradeTeam(team) {
+    const options = upgradeOptions(team);
+    if (!options.length) return false;
+    applyUpgradeChoice(options[Math.floor(Math.random() * options.length)], team === 'cpu');
+    return true;
+}
+
 async function triggerRoguelikeUpgrade() {
     stopTurnTimer();
     SFX.powerUp();
-
-    // --- PLAYER UPGRADE ---
-    // Mind-controlled enemies and temporary clones are not eligible for permanent upgrades
-    const playerAlive = aliveDice('player').filter(d => !d.isMindControlled && !d.isCloneDie);
-    const availableUpgrades = [];
-
-    playerAlive.forEach((die, index) => {
-        die.skills.forEach(skill => {
-            if (skill.curLvl < skill.maxLvl) {
-                availableUpgrades.push({ die, dieIndex: index + 1, skill });
-            }
-        });
-    });
-
-    if (availableUpgrades.length > 0) {
-        const choices = availableUpgrades.sort(() => Math.random() - 0.5).slice(0, 3);
-
-        if (fastAutoMode) {
-            const choice = choices[0];
-            choice.skill.curLvl++;
-            fxLevelUp(choice.die);
-            addFloatingText(`✨ ${choice.skill.name} Lvl ${choice.skill.curLvl}!`, choice.die.q, choice.die.r, '#fbbf24', 20);
-            SFX.powerUp();
-        } else {
-            showTip('upgrade');
-            await new Promise(resolve => {
-                window._chooseUpgrade = function(idx) {
-                    const choice = choices[idx];
-                    choice.skill.curLvl++;
-                    fxLevelUp(choice.die);
-                    addFloatingText(`✨ ${choice.skill.name} Lvl ${choice.skill.curLvl}!`, choice.die.q, choice.die.r, '#fbbf24', 20);
-                    SFX.powerUp();
-                    hideOverlay();
-                    resolve();
-                };
-
-                const html = `
-                    <div class="overlay-box">
-                        <div class="overlay-icon gold">${iconSVG('star')}</div>
-                        <h2>Choose an upgrade</h2>
-                        <p>Wave ${game.wave} reached. Pick one skill to level up.</p>
-                        <div class="upgrade-cards-grid">
-                            ${choices.map((c, i) => `
-                                <button class="upgrade-card-item" onclick="_chooseUpgrade(${i})">
-                                    ${classBadge(c.die.archetype, 'lg')}
-                                    <div class="upgrade-info">
-                                        <div class="upgrade-name">${c.skill.name}<small>${archName(c.die.archetype)}, die ${c.dieIndex}</small></div>
-                                        <div class="upgrade-desc">${c.skill.desc}</div>
-                                    </div>
-                                    <span class="upgrade-badge">${c.skill.curLvl === 0 ? 'Unlock' : 'Level ' + (c.skill.curLvl + 1)}</span>
-                                </button>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-                showOverlay(html);
-            });
-        }
-    }
-
-    // --- CPU AUTO-UPGRADE ---
-    const cpuAlive = aliveDice('cpu').filter(d => !d.isMindControlled && !d.isCloneDie);
-    const cpuUpgrades = [];
-    cpuAlive.forEach(die => {
-        die.skills.forEach(skill => {
-            if (skill.curLvl < skill.maxLvl) {
-                cpuUpgrades.push({ die, skill });
-            }
-        });
-    });
-    if (cpuUpgrades.length > 0) {
-        const pick = cpuUpgrades[Math.floor(Math.random() * cpuUpgrades.length)];
-        pick.skill.curLvl++;
-        fxLevelUp(pick.die);
-        addFloatingText(`🔴 CPU: ${pick.skill.name} Lvl ${pick.skill.curLvl}!`, pick.die.q, pick.die.r, '#ef4444', 18);
-        SFX.powerUp();
-        await delay(800);
-    }
+    await offerPlayerUpgrade({ title: 'Choose an upgrade', lead: `Wave ${game.wave} reached. Pick one skill to level up.` });
+    if (autoUpgradeTeam('cpu')) await delay(800);
     updateDiceHP();
+}
+
+// Comeback: losing a die to the enemy earns its side one skill upgrade (pick 1 of 3)
+function grantComebackUpgrade(team, fallen) {
+    if (game.phase === 'GAME_OVER') return;
+    const name = archName(fallen.archetype);
+    if (team === 'cpu') {
+        if (autoUpgradeTeam('cpu')) addCombatLog(`CPU lost its ${name} and gained a comeback upgrade`, '', '#E0525E');
+        updateDiceHP();
+        return;
+    }
+    if (!upgradeOptions('player').length) return;
+    game.pendingComebacks = game.pendingComebacks || [];
+    game.pendingComebacks.push(name);
+    addFloatingText('Comeback upgrade earned!', fallen.q, fallen.r, '#F2B84B', 18);
+    addCombatLog(`Your ${name} was destroyed: comeback upgrade at the start of your turn`, '', '#F2B84B');
+    showTip('comeback');
+}
+
+async function processComebackUpgrades() {
+    while (game.pendingComebacks && game.pendingComebacks.length) {
+        const name = game.pendingComebacks.shift();
+        if (game.phase === 'GAME_OVER') return;
+        stopTurnTimer();
+        await offerPlayerUpgrade({
+            title: 'Comeback upgrade',
+            lead: `Your ${name} was destroyed. Pick one skill upgrade for your remaining dice.`,
+            icon: 'restart', tone: 'teal',
+        });
+        updateDiceHP();
+    }
 }
 
 function spawnEventTiles() {
@@ -439,7 +456,7 @@ async function triggerArenaBlitz() {
 // A zombie bite counts as damage dealt by the necromancer that raised it
 function zombieHit(zombie, die) {
     const owner = allDice().find(d => d.id === zombie.ownerId);
-    const dealt = applyIndirectDamage(die, zombie.damage, 'Zombie', '#10b981');
+    const dealt = applyIndirectDamage(die, zombie.damage, 'Zombie', '#10b981', zombie.team);
     if (owner && dealt > 0) creditDamageDealt(owner, dealt);
     const who = owner ? `${owner.team === 'cpu' ? 'CPU ' : ''}${archName(owner.archetype)}` : 'A necromancer';
     addCombatLog(`${who}'s zombie bit ${archName(die.archetype)} for ${dealt} DMG`, '', '#10b981');
@@ -484,7 +501,7 @@ function triggerTileEffectOnDie(die) {
         const trap = game.bearTraps.get(k);
         if (trap && trap.team !== die.team) {
             game.bearTraps.delete(k);
-            applyIndirectDamage(die, 5, 'Bear Trap', '#ef4444');
+            applyIndirectDamage(die, 5, 'Bear Trap', '#ef4444', trap.team);
             die.trapped = 2;
             die.moveAllowance = 0;
             addFloatingText('Bear trapped!', die.q, die.r, '#ef4444', 20);
