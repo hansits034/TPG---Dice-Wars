@@ -71,7 +71,6 @@
 
         <div class="start-actions-wrapper">
             <button class="clay-btn teal big" onclick="openGameSettingsModal()">Start battle</button>
-            <button class="clay-btn gold" onclick="openPuzzleSelect()">Puzzles</button>
             <button class="clay-btn plain" onclick="openDiceGuideModal()">Class guide</button>
         </div>
     </div>
@@ -85,7 +84,6 @@
             <div class="brand">Dice Wars</div>
             <div class="hud-group">
                 <span class="hud-chip wave" id="wave-badge">Wave 1</span>
-                <span class="hud-chip puzzle" id="puzzle-badge" style="display:none"></span>
                 <div class="hud-chip timer" id="timer-badge" title="Time left this turn">
                     <svg class="ico" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7.5 3c0 5.5 9 5.5 9 9s-9 3.5-9 9M16.5 3c0 5.5-9 5.5-9 9s9 3.5 9 9"/></svg>
                     <span>30</span><small>s</small>
@@ -176,7 +174,6 @@
             <div class="tray-skills" id="tray-skills">
                 <button class="clay-btn violet btn-action btn-zap" id="btn-zap" onclick="clearPreview(); triggerPlayerMageZap()" onmouseenter="previewZap()" onmouseleave="clearPreview()" title="Mage: hit the nearest enemy for damage equal to its distance">Zap</button>
                 <button class="clay-btn sky btn-action btn-archer" id="btn-archer" style="display:none;" onclick="triggerPlayerArcherShot()" title="Archer: shoot any enemy from range">Long shot</button>
-                <button class="clay-btn plain btn-action btn-raise" id="btn-raise" style="display:none;" onclick="triggerPuzzleRaise()" title="Necromancer: raise a ghoul within 2 tiles that bites every enemy next to it">Raise</button>
                 <button class="clay-btn amber btn-action btn-pivot" id="btn-pivot" style="display:none;" onclick="triggerPlayerPiercerPivot()" title="Piercer: 8 damage to every enemy around this die">Pivot</button>
                 <button class="clay-btn plain btn-action btn-cancel-pivot" id="btn-cancel-pivot" style="display:none;" onclick="cancelPivotPreview()">Cancel pivot</button>
                 <button class="clay-btn violet btn-action btn-mind-control" id="btn-mind-control" style="display:none;" onclick="triggerPlayerMindControl()" title="Telekinator: take control of one enemy die for 2 waves">Mind control</button>
@@ -202,8 +199,7 @@
     <script src="js/state.js?v=4.2.5"></script>
     <script src="js/render.js?v=4.2.5"></script>
     <script src="js/ui.js?v=4.2.5"></script>
-    <script src="js/modes.js?v=4.2.5"></script>
-    <script src="js/puzzles.js?v=4.2.5"></script>
+    <script src="js/pause.js?v=4.2.5"></script>
     <script src="js/preview.js?v=4.2.5"></script>
     <script src="js/tips.js?v=4.2.5"></script>
     <script src="js/cards.js?v=4.2.5"></script>

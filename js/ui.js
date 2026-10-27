@@ -78,7 +78,6 @@ function updateTimerDisplay() {
 // Human-readable label for a die in rosters and reports
 function dieDisplayName(d, i) {
     const cls = archName(d.archetype);
-    if (d.archetype === 'boss') return { name: 'Dice Titan', sub: '' };
     if (d.isCloneDie) return { name: `${cls} clone`, sub: '' };
     if (d.isSplit) return { name: `${cls} undead`, sub: d.id.endsWith('_a') ? 'A' : 'B' };
     return { name: cls, sub: `Die ${i + 1}` };
@@ -162,7 +161,7 @@ function dieTagsMiniHTML(d) {
 }
 
 function rosterHTML(dice, team) {
-    const hpColor = pct => pct > 0.5 ? (displayTeam(team) === 'player' ? 'var(--player)' : 'var(--cpu)') : pct > 0.25 ? 'var(--gold)' : '#E4572E';
+    const hpColor = pct => pct > 0.5 ? (team === 'player' ? 'var(--player)' : 'var(--cpu)') : pct > 0.25 ? 'var(--gold)' : '#E4572E';
     return dice.map((d, i) => {
         const maxH = d.maxHp || gameSettings.startHp || MAX_HP;
         const pct = Math.max(0, Math.min(1, d.hp / maxH));
@@ -193,12 +192,12 @@ function updateDiceHP() {
     const cpuEl = document.getElementById('cpu-dice-hp');
     const plEl = document.getElementById('player-dice-hp');
     if (!cpuEl || !plEl) return;
-    cpuEl.innerHTML = isBossMode() && game.cpuDice.some(d => d.archetype === 'boss') ? bossPanelHTML() : rosterHTML(game.cpuDice, 'cpu');
+    cpuEl.innerHTML = rosterHTML(game.cpuDice, 'cpu');
     plEl.innerHTML = rosterHTML(game.playerDice, 'player');
 }
 
 function rollDiceHTML(values, team) {
-    const cls = displayTeam(team) === 'player' ? 'player-die' : 'cpu-die';
+    const cls = team === 'player' ? 'player-die' : 'cpu-die';
     const total = values.reduce((a, b) => a + b, 0);
     return values.map(v => `<span class="roll-die-box ${cls}">${v}</span>`).join('<span class="roll-plus">+</span>') +
         `<span class="roll-eq">=</span><span class="roll-total">${total}</span>`;
@@ -216,13 +215,11 @@ function updateMoves() {
     const el = document.getElementById('moves-display');
     const perDie = aliveDice(team).map(d => {
         const atk = attacksLeft(d);
-        const done = (d.moveAllowance <= 0 && atk <= 0) || puzzleLocked(d);
-        const tip = puzzleLocked(d) ? `attacked: ${d.moveAllowance} moves saved, Attack Again unlocks them`
-            : `${d.moveAllowance} ${d.moveAllowance === 1 ? 'move' : 'moves'} left, ${atk} ${atk === 1 ? 'attack' : 'attacks'} left`;
+        const done = d.moveAllowance <= 0 && atk <= 0;
+        const tip = `${d.moveAllowance} ${d.moveAllowance === 1 ? 'move' : 'moves'} left, ${atk} ${atk === 1 ? 'attack' : 'attacks'} left`;
         return `<span class="die-moves ${done ? 'done' : ''}" title="${archName(d.archetype)}: ${tip}">${classBadge(d.archetype, 'sm')}<b>${d.moveAllowance}</b>${atk > 0 ? `<span class="die-atk">${iconSVG('swords')}${atk > 1 ? atk : ''}</span>` : ''}</span>`;
     }).join('');
-    if (el) el.innerHTML = `<b>${total}</b> ${total === 1 ? 'move' : 'moves'}${game.currentTurn === 'cpu' && !isHotseat() ? (isBossMode() ? ' (Titan)' : ' (CPU)') : ''}${perDie ? `<span class="per-die-moves">${perDie}</span>` : ''}`;
-    if (typeof updatePuzzleHud === 'function') updatePuzzleHud();
+    if (el) el.innerHTML = `<b>${total}</b> ${total === 1 ? 'move' : 'moves'}${game.currentTurn === 'cpu' ? ' (CPU)' : ''}${perDie ? `<span class="per-die-moves">${perDie}</span>` : ''}`;
 }
 
 function updateWaveBadge() {
@@ -250,7 +247,7 @@ function updateEventBadge() {
 
 function setMessage(msg) {
     const el = document.getElementById('game-message');
-    if (el) el.textContent = stripEmoji(localizeText(msg));
+    if (el) el.textContent = stripEmoji(msg);
 }
 
 function setSkillButton(btn, icon, label, count) {
@@ -287,17 +284,6 @@ function updateSkillButtons() {
         } else {
             archerBtn.style.display = 'none';
         }
-    }
-
-    // Puzzle: Necromancer Raise
-    const raiseBtn = document.getElementById('btn-raise');
-    if (raiseBtn) {
-        const necro = typeof isPuzzle === 'function' && isPuzzle() ? alivePlayer.find(d => d.archetype === 'necromancer') : null;
-        if (necro) {
-            raiseBtn.style.display = 'inline-flex';
-            setSkillButton(raiseBtn, 'necromancer', necro.puzzleRaised ? 'Raised' : 'Raise');
-            raiseBtn.disabled = !isPlayerTurn || necro.puzzleRaised || puzzleOutOfActions();
-        } else raiseBtn.style.display = 'none';
     }
 
     // 3. Piercer Pivot (3 wave cooldown + preview + cancel)
@@ -378,9 +364,7 @@ function updateCardHand() {
 
     if (el) {
         if (game.playerHand.length === 0) {
-            el.innerHTML = typeof isPuzzle === 'function' && isPuzzle()
-                ? '<span class="empty-hand">No cards in this puzzle.</span>'
-                : '<span class="empty-hand">No cards yet. Step on a glowing crystal to draw one.</span>';
+            el.innerHTML = '<span class="empty-hand">No cards yet. Step on a glowing crystal to draw one.</span>';
         } else {
             el.innerHTML = game.playerHand.map((card, i) => {
                 const activeCls = game.activeCard && game.activeCard._handIdx === i ? ' active-card' : '';
@@ -458,14 +442,12 @@ function openGameMenuModal() {
         <div class="overlay-box pause-box" style="max-width:420px;">
             <div class="overlay-icon violet">${iconSVG('pause')}</div>
             <h2>Paused</h2>
-            <p>The match is frozen: turn timer, match clock and the ${isHotseat() ? "other player's" : isBossMode() ? "Titan's" : "computer's"} moves all wait for you. Press P to resume.</p>
+            <p>The match is frozen: turn timer, match clock and the computer's moves all wait for you. Press P to resume.</p>
             <div class="menu-list">
                 <button class="clay-btn plain" onclick="hideOverlay(); toggleBGM(); setTimeout(openGameMenuModal, 100);">
                     ${iconSVG(bgmEnabled ? 'music' : 'mute')}${bgmEnabled ? 'Music is on' : 'Music is off'}
                 </button>
-                <button class="clay-btn gold" onclick="resumeGame(); startGame();">${iconSVG('restart')}${isPuzzle() ? 'Restart puzzle' : 'Restart match'}</button>
-                ${isPuzzle() ? `<button class="clay-btn plain" onclick="resumeGame(); showPuzzleHint();">${iconSVG('puzzle')}Next step hint</button>
-                <button class="clay-btn plain" onclick="resumeGame(); openPuzzleSelect();">${iconSVG('left')}All puzzles</button>` : ''}
+                <button class="clay-btn gold" onclick="resumeGame(); startGame();">${iconSVG('restart')}Restart match</button>
                 <button class="clay-btn berry" onclick="hideOverlay(); quitToMainMenu();">${iconSVG('home')}Quit to main menu</button>
                 <button class="clay-btn plain" onclick="resetTips(); resumeGame(); setMessage('Tips will show again as things come up.');">${iconSVG('help')}Show tips again</button>
                 <button class="clay-btn teal" onclick="resumeGame();">${iconSVG('right')}Resume</button>
@@ -485,8 +467,7 @@ function quitToMainMenu() {
     hideOverlay();
     document.getElementById('game-screen').classList.remove('active');
     document.getElementById('start-screen').classList.remove('hidden');
-    document.body.classList.remove('mode-puzzle', 'is-paused');
-    if (gameSettings.mode === 'puzzle') gameSettings.mode = 'classic';
+    document.body.classList.remove('is-paused');
 }
 
 // Current active role in the class guide
@@ -579,8 +560,7 @@ function openHelpModal() {
             <h3>Arena rhythm</h3>
             <ul>
                 <li><strong>Every 3 waves</strong>, glowing crystals appear. Step on one to draw a card (hand limit 3, or 4 with a Defender, Samurai or Doctor).</li>
-                <li><strong>Puzzles:</strong> one-turn challenges with fixed dice, odd maps and rocks. Press R to restart a puzzle and H for a step-by-step hint.</li>
-                <li><strong>Modes:</strong> play against the computer, pass one device between 2 players, or raid the Dice Titan boss (once, or Endless for a high score). Press P or the pause button any time to freeze the match.</li>
+                <li><strong>Pause:</strong> press P or the pause button any time to freeze the match.</li>
                 <li><strong>Every 4 waves</strong>, pick one skill upgrade from three choices. Losing a die to the enemy also earns a <strong>comeback upgrade</strong> for your remaining dice.</li>
                 <li><strong>Arena events</strong> hit on waves 5, 10, 14, 18, 21, 24, 27, 30, then every 2 waves, and every single wave from wave 37. Their effects stack. From wave 40 they turn <strong>brutal</strong>: 50% more tiles, double damage, traps last 2 waves longer.</li>
             </ul>
@@ -690,24 +670,6 @@ function updateStatsDisplay() {
 function openGameSettingsModal() {
     let selectedHp = gameSettings.startHp || 50;
     let selectedDiff = gameSettings.difficulty || 'medium';
-    let selectedMode = gameSettings.mode && gameSettings.mode !== 'puzzle' ? gameSettings.mode : 'classic';
-    let selectedEndless = !!gameSettings.bossEndless;
-    window._selectSettingBoss = function (endless) {
-        selectedEndless = endless;
-        document.querySelectorAll('.boss-opt-btn').forEach(b => b.classList.toggle('active', (b.dataset.endless === '1') === endless));
-    };
-    if (!gameSettings.p2Classes || gameSettings.p2Classes.length !== 3) gameSettings.p2Classes = randomSquad();
-
-    window._selectSettingMode = function (mode) {
-        selectedMode = mode;
-        document.querySelectorAll('.mode-opt-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
-        const p2 = document.getElementById('p2-section');
-        const diff = document.getElementById('diff-section');
-        if (p2) p2.style.display = mode === 'hotseat' ? '' : 'none';
-        if (diff) diff.style.display = mode === 'hotseat' ? 'none' : '';
-        const boss = document.getElementById('boss-section');
-        if (boss) boss.style.display = mode === 'boss' ? '' : 'none';
-    };
 
     window._selectSettingHp = function (hp) {
         selectedHp = hp;
@@ -720,17 +682,10 @@ function openGameSettingsModal() {
     window._confirmSettingsAndStart = function () {
         gameSettings.startHp = selectedHp;
         gameSettings.difficulty = selectedDiff;
-        gameSettings.mode = selectedMode;
-        gameSettings.bossEndless = selectedEndless;
-        if (selectedMode === 'hotseat' && fastAutoMode) toggleFastAutoModeOff();
         hideOverlay();
         startGame();
     };
 
-    const modeOpt = (id, name, desc) => `<button class="settings-opt-btn mode-opt-btn ${selectedMode === id ? 'active' : ''}" data-mode="${id}" onclick="_selectSettingMode('${id}')">
-        <div class="settings-opt-name">${name}</div><div class="settings-opt-desc">${desc}</div></button>`;
-    const bossOpt = (endless, name, desc) => `<button class="settings-opt-btn boss-opt-btn ${selectedEndless === endless ? 'active' : ''}" data-endless="${endless ? 1 : 0}" onclick="_selectSettingBoss(${endless})">
-        <div class="settings-opt-name">${name}</div><div class="settings-opt-desc">${desc}</div></button>`;
     const hpOpt = (hp, desc) => `<button class="settings-opt-btn hp-opt-btn ${selectedHp === hp ? 'active' : ''}" data-hp="${hp}" onclick="_selectSettingHp(${hp})">
         <div class="settings-opt-name">${hp} HP</div><div class="settings-opt-desc">${desc}</div></button>`;
     const diffOpt = (id, name, desc) => `<button class="settings-opt-btn diff-opt-btn ${selectedDiff === id ? 'active' : ''}" data-diff="${id}" onclick="_selectSettingDiff('${id}')">
@@ -739,27 +694,7 @@ function openGameSettingsModal() {
     showOverlay(`
         <div class="overlay-box settings-modal-box">
             <h2>Match setup</h2>
-            <p class="overlay-lead" style="margin:0;">Pick a mode, how long the fight lasts and how sharp the computer plays.</p>
-
-            <div class="settings-section-title">Mode</div>
-            <div class="settings-options-grid">
-                ${modeOpt('classic', 'Vs computer', 'Your squad against the CPU')}
-                ${modeOpt('hotseat', '2 players', 'Take turns on one device')}
-                ${modeOpt('boss', 'Boss raid', 'Your squad against the Dice Titan')}
-            </div>
-
-            <div id="boss-section" style="display:${selectedMode === 'boss' ? '' : 'none'};">
-                <div class="settings-section-title">Raid type</div>
-                <div class="settings-options-grid two">
-                    ${bossOpt(false, 'Raid', 'Bring the Titan down once')}
-                    ${bossOpt(true, 'Endless', readBossBest() ? `It keeps rising. Best: ${readBossBest()} dmg` : 'It keeps rising. Score = damage dealt')}
-                </div>
-            </div>
-
-            <div id="p2-section" style="display:${selectedMode === 'hotseat' ? '' : 'none'};">
-                <div class="settings-section-title">Player 2 squad</div>
-                <div class="p2-squad" id="p2-squad">${p2SquadHTML()}</div>
-            </div>
+            <p class="overlay-lead" style="margin:0;">Your squad against the computer. Pick how long the fight lasts and how sharp the computer plays.</p>
 
             <div class="settings-section-title">Starting HP per die</div>
             <div class="settings-options-grid">
@@ -768,13 +703,11 @@ function openGameSettingsModal() {
                 ${hpOpt(100, 'Endurance')}
             </div>
 
-            <div id="diff-section" style="display:${selectedMode === 'hotseat' ? 'none' : ''};">
             <div class="settings-section-title">Computer difficulty</div>
             <div class="settings-options-grid">
                 ${diffOpt('easy', 'Easy', 'Picks moves at random')}
                 ${diffOpt('medium', 'Medium', 'Plans attacks and positions')}
                 ${diffOpt('hard', 'Hard', 'Plans ahead, rolls high more often')}
-            </div>
             </div>
 
             <div class="overlay-actions" style="justify-content:flex-end;">
@@ -810,7 +743,7 @@ function diceCubeHTML(team, value, archetype) {
             : PIP_LAYOUT[f].map(([x, y]) => `<i style="left:${x}%;top:${y}%"></i>`).join('');
         return `<div class="dice-face f${f}">${mark}${inner}</div>`;
     }).join('');
-    return `<div class="dice-cube-wrap ${displayTeam(team)}" ${style}>
+    return `<div class="dice-cube-wrap ${team}" ${style}>
         <div class="dice-shadow"></div>
         <div class="dice-cube-view"><div class="dice-cube">
             <div class="dice-core a"></div><div class="dice-core b"></div><div class="dice-core c"></div>
@@ -907,18 +840,18 @@ function showDieTooltip(die, clientX, clientY) {
         const mine = die.team === 'player';
         tip.dataset.dieId = die.id;
         tip.dataset.hp = String(die.hp);
-        tip.className = displayTeam(die.team);
+        tip.className = die.team;
         tip.innerHTML = `
             <div class="tip-head">
                 ${classBadge(die.archetype, 'lg')}
                 <div>
                     <div class="tip-name">${dieDisplayName(die, 0).name}</div>
-                    <div class="tip-team">${isHotseat() ? `${sideName(die.team)}'s die` : die.archetype === 'boss' ? 'Raid boss' : mine ? 'Your die' : 'Enemy die'}${die.isMindControlled ? ', mind-controlled' : ''}</div>
+                    <div class="tip-team">${mine ? 'Your die' : 'Enemy die'}${die.isMindControlled ? ', mind-controlled' : ''}</div>
                 </div>
                 <div class="die-dmg">${getDieEffectiveDamage(die)}<small>dmg</small></div>
             </div>
             <div class="hp-line">
-                <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${displayTeam(die.team) === 'player' ? 'var(--player)' : 'var(--cpu)'}"></div></div>
+                <div class="hp-bar-outer"><div class="hp-bar-inner" style="width:${pct * 100}%;background:${die.team === 'player' ? 'var(--player)' : 'var(--cpu)'}"></div></div>
                 <span class="hp-num">${Math.max(0, die.hp)}/${maxH}</span>
             </div>
             <div class="die-tags">${dieTagsHTML(die)}</div>
@@ -962,13 +895,12 @@ function showCreatureTooltip(list, clientX, clientY) {
         g.waves = Math.max(g.waves, e.unit.wavesLeft || 0);
         g.dmg = e.kind === 'zombie' ? e.unit.damage : brutalDamage(SWARM_KINDS[e.kind].dmg, e.unit.brutal);
         g.brutal = g.brutal || !!e.unit.brutal;
-        g.boss = g.boss || !!e.unit.ownerTeam;
     }
     const rows = groups.map(g => {
         const st = CREATURE_STYLE[g.kind];
         const who = g.kind === 'zombie'
             ? `${g.team === 'player' ? 'Your' : 'Enemy'} ${g.owner ? archName(g.owner.archetype) : 'Necromancer'}'s`
-            : (g.boss ? 'Titan\'s' : g.brutal ? 'Brutal' : 'Wild');
+            : (g.brutal ? 'Brutal' : 'Wild');
         const extra = g.kind === 'bee' ? ', -1 move' : g.kind === 'mummy' ? ', stops healing' : g.kind === 'robot' ? ', hunts the weakest' : '';
         return `<div class="crowd-row"><span class="crowd-dot" style="background:${st.color}"></span>
             <div><b>${g.count} ${g.count > 1 ? st.plural : st.name}</b><small>${who}, ${g.dmg} damage${extra}. ${g.waves} ${g.waves === 1 ? 'wave' : 'waves'} left</small></div></div>`;

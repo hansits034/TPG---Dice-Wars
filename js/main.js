@@ -83,10 +83,6 @@ function onCanvasClick(e) {
         handleArcherTargetSelect(hex.q, hex.r);
         return;
     }
-    if (game.phase === 'PLAYER_RAISE_TARGET') {
-        handleRaiseTarget(hex.q, hex.r);
-        return;
-    }
     if (game.phase === 'PLAYER_MIND_CONTROL_ENEMY') {
         handleMindControlEnemySelect(hex.q, hex.r);
         return;
@@ -202,8 +198,6 @@ function watchBoardSize() {
 
 function onKeyDown(e) {
     if (e.key === 'p' || e.key === 'P') { togglePause(); return; }
-    if ((e.key === 'r' || e.key === 'R') && isPuzzle() && !overlayOpen()) { restartPuzzle(); return; }
-    if ((e.key === 'h' || e.key === 'H') && isPuzzle() && !overlayOpen()) { showPuzzleHint(); return; }
     if (isPaused()) return;
     if (e.key === 'Escape') cancelCard();
 }

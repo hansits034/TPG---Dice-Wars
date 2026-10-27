@@ -4,7 +4,6 @@
 let fastAutoMode = false;
 
 function toggleFastAutoMode() {
-    if (isHotseat()) return; // both sides are people
     fastAutoMode = !fastAutoMode;
     const btn = document.getElementById('auto-test-btn');
     if (btn) {
@@ -14,13 +13,6 @@ function toggleFastAutoMode() {
     if (fastAutoMode && game.phase === 'PLAYER_TURN' && game.currentTurn === 'player') {
         matchTimeout(playerAutoBotTurn, 200);
     }
-}
-
-function toggleFastAutoModeOff() {
-    if (!fastAutoMode) return;
-    fastAutoMode = false;
-    const btn = document.getElementById('auto-test-btn');
-    if (btn) { btn.classList.remove('active'); btn.innerHTML = `${iconSVG('fast')}<span>Auto play</span>`; }
 }
 
 // Shared card AI for the CPU and the player's Fast Auto bot.
@@ -172,7 +164,6 @@ async function playerAutoBotTurn() {
 
 async function beginCpuTurn() {
     if (game.phase === 'GAME_OVER') return;
-    if (isHotseat()) return beginHotseatTurn();
     clearPreview();
     game.phase = 'CPU_TURN';
     game.currentTurn = 'cpu';
@@ -210,12 +201,6 @@ async function beginCpuTurn() {
 
     updateRollDisplay(vals, 'cpu');
     updateDiceHP();
-
-    if (isBossMode()) {
-        await bossAbilities();
-        updateDiceHP();
-        if (checkWin()) return;
-    }
 
     // CPU Mage Zap Skill Execution
     const cpuMage = alive.find(d => (d.archetype === 'mage' || getSkillLevel(d, 'zap') > 0) && (d.zapStacks || 0) > 0 && canUseActiveSkill(d));

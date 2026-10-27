@@ -134,20 +134,8 @@ const ARCHETYPES = [
 let gameSettings = {
     startHp: 50,
     difficulty: 'medium', // 'easy', 'medium', 'hard'
-    mode: 'classic',      // 'classic' (vs computer), 'hotseat' (2 players), 'boss' (boss raid)
-    p2Classes: ['rage', 'mage', 'defender'],
 };
 
-// Boss Raid only: never offered in class pickers or to the computer's random squad
-const BOSS_ARCHETYPE = {
-    id: 'boss', name: 'Dice Titan', icon: '',
-    skills: [
-        { id: 'titanMight', name: 'Titan Might', desc: 'Every hit deals +3 damage (+6 while enraged). Cannot be pushed, pulled or mind-controlled.', maxLvl: 1, curLvl: 1 },
-        { id: 'summonHorde', name: 'Summon Horde', desc: 'Every 2 waves raises a minion (2 while enraged) that hunts your dice for 2 waves.', maxLvl: 1, curLvl: 1 },
-        { id: 'titanSlam', name: 'Titan Slam', desc: 'Below 66% HP: every other turn deals 7 damage (10 enraged) to all dice within 2 tiles.', maxLvl: 1, curLvl: 1 },
-        { id: 'enrage', name: 'Enrage', desc: 'Below 33% HP: +2 moves, +6 damage and an arena event every wave.', maxLvl: 1, curLvl: 1 },
-    ],
-};
 
 // Default 3 distinct roles for player
 let selectedPlayerClasses = ['dracula', 'ninja', 'samurai'];
@@ -232,7 +220,7 @@ function randomCard(team = 'player') {
     const hasDefender = dice.some(d => getSkillLevel(d, 'defenderMastery') > 0);
     const hasSamurai = dice.some(d => getSkillLevel(d, 'dashMastery') > 0);
 
-    const adjustedDefs = CARD_DEFS.filter(c => !c.puzzleOnly).map(c => {
+    const adjustedDefs = CARD_DEFS.map(c => {
         let w = c.weight;
         if (c.id === 'conceal' && hasDefender) w = Math.round(w * 2.2);
         if (c.id === 'dash' && hasSamurai) w = Math.round(w * 2.5);

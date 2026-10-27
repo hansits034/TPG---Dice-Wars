@@ -61,15 +61,13 @@ function hexDist(q1, r1, q2, r2) {
 // Pathfinding & Movement Checks
 function isBlocked(q, r) {
     const k = hKey(q, r);
-    return (game.blocks && game.blocks.has(k)) || (game.voidTiles && game.voidTiles.has(k)) || !!(game.puzzleGaps && game.puzzleGaps.has(k));
+    return (game.blocks && game.blocks.has(k)) || (game.voidTiles && game.voidTiles.has(k));
 }
 
 // Every step costs one move, including the step onto the enemy you attack.
 function findReachable(die, maxMoves) {
     const reachable = new Map();
     const parents = new Map();
-    if (die.team === 'player' && typeof puzzleOutOfActions === 'function' && puzzleOutOfActions()) return { reachable, parents };
-    if (puzzleLocked(die)) return { reachable, parents };
     const moves = maxMoves !== undefined ? maxMoves : die.moveAllowance;
     const canStrike = !(die.frozen > 0) && !(die.trapped > 0) && attackAvailable(die);
     const ownTeam = die.team;

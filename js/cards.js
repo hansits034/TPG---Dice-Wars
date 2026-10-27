@@ -60,7 +60,6 @@ function onCardClick(idx) {
 function applyCard(card, team, handIdx) {
     const hand = team === 'player' ? game.playerHand : game.cpuHand;
     hand.splice(handIdx, 1);
-    if (team === 'player' && typeof recordPuzzleCard === 'function') recordPuzzleCard(card, []);
 
     switch (card.id) {
         case 'dmg2': {
@@ -108,7 +107,6 @@ function applyCard(card, team, handIdx) {
 function applyCardWithTarget(card, team, handIdx, targets) {
     const hand = team === 'player' ? game.playerHand : game.cpuHand;
     hand.splice(handIdx, 1);
-    if (team === 'player' && typeof recordPuzzleCard === 'function') recordPuzzleCard(card, targets);
 
     switch (card.id) {
         case 'heal': {
